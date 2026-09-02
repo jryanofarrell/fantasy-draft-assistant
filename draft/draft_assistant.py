@@ -366,9 +366,27 @@ def run_live(args):
     print(f"\nPolling every {args.interval}s. Draft in your provider as normal; "
           f"Ctrl-C to stop.\n")
 
-    shown_for = None
+    # Show the opening board straight away. Without this, starting before the
+    # draft leaves a blank screen until someone picks.
+    opening_next = next((p for p in my_schedule), None)
+    if opening_next is not None:
+        following = next((p for p in my_schedule if p > opening_next), None)
+        made_now = [p for p in state0["picks"]
+                    if p.get("playerId", -1) > 0 or p.get("pick_no")]
+        start = (max(p.get("overallPickNumber") or p.get("pick_no")
+                     for p in made_now) + 1) if made_now else 1
+        print(f"Pick #{start} Round{(start - 1) // LEAGUE_SIZE + 1}"
+              f"{' ' + on_the_clock.get(start, '') if on_the_clock.get(start) else ''}"
+              f"{'  <<< YOU ARE ON THE CLOCK' if start == opening_next else ''}")
+        show_board(available, my_roster, opening_next, following,
+                   on_clock=(start == opening_next),
+                   projected=vona_mod.project(available, HISTORY, LEAGUE_SIZE,
+                                              start, opening_next, POINTS_COL))
+        shown_for = opening_next if start == opening_next else None
+
     previous = None
     batch: list[str] = []
+    shown_for = None
     try:
         while True:
             state = draft.state()
