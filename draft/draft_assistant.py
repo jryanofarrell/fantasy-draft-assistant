@@ -233,7 +233,8 @@ def suggest_top_by_positions(available: pd.DataFrame, my_roster: pd.DataFrame,
 
 def suggest_top(available: pd.DataFrame, my_roster: pd.DataFrame, k: int = 10,
                 current_pick: int | None = None,
-                next_pick: int | None = None) -> pd.DataFrame:
+                next_pick: int | None = None,
+                pool: pd.DataFrame | None = None) -> pd.DataFrame:
     cand = available.copy()
     # keep calculations safe
     for col in [POINTS_COL, "VOR"]:
@@ -246,7 +247,7 @@ def suggest_top(available: pd.DataFrame, my_roster: pd.DataFrame, k: int = 10,
     if current_pick is not None:
         pre["VONA"] = vona_mod.compute(
             pre, HISTORY, LEAGUE_SIZE, current_pick, next_pick, POINTS_COL,
-            pool=cand,
+            pool=pool if pool is not None else cand,
         )
     else:
         pre["VONA"] = 0.0
@@ -423,12 +424,17 @@ def run_live(args):
                 print(f"Pick #{next_overall} Round{rnd}"
                       f"{' ' + team if team else ''}{tag}", flush=True)
 
-                upcoming = [p for p in my_schedule if p >= next_overall]
-                current = upcoming[0] if upcoming else None
-                following = upcoming[1] if len(upcoming) > 1 else None
-                if current is not None:
-                    show_board(available, my_roster, current, following,
-                               on_clock=on_clock)
+                # VONA always answers the decision you face at your own next
+                # pick. While waiting, the board is first projected forward to
+                # that pick, so the fallback it names is one that plausibly
+                # survives rather than a player already gone by then.
+                mine_next = next((p for p in my_schedule if p >= next_overall), None)
+                following = next((p for p in my_schedule if p > (mine_next or 0)), None)
+                if mine_next is not None:
+                    projected = vona_mod.project(available, HISTORY, LEAGUE_SIZE,
+                                                 next_overall, mine_next, POINTS_COL)
+                    show_board(available, my_roster, mine_next, following,
+                               on_clock=on_clock, projected=projected)
                 if on_clock:
                     shown_for = next_overall
 
@@ -448,7 +454,8 @@ def indent(text: str) -> str:
     return "\n".join(INDENT + line for line in text.splitlines())
 
 
-def show_board(available, my_roster, current_pick, next_pick, on_clock=False):
+def show_board(available, my_roster, current_pick, next_pick, on_clock=False,
+               projected=None):
     """Top-ten board, indented beneath the pick line.
 
     VONA is always present rather than appearing only when it has something
@@ -456,7 +463,8 @@ def show_board(available, my_roster, current_pick, next_pick, on_clock=False):
     itself the signal that waiting is free at that position.
     """
     sugg = suggest_top(available, my_roster, k=LEAGUE.suggestions,
-                       current_pick=current_pick, next_pick=next_pick)
+                       current_pick=current_pick, next_pick=next_pick,
+                       pool=projected)
     if sugg.empty:
         print(indent("no candidates left"))
         return
@@ -469,11 +477,16 @@ def show_board(available, my_roster, current_pick, next_pick, on_clock=False):
     print(indent(table_mod.render(view, index_name="#")))
 
     if next_pick and next_pick > current_pick + 1:
-        panel = vona_mod.summary(available, HISTORY, LEAGUE_SIZE,
-                                 current_pick, next_pick, POINTS_COL)
+        panel = vona_mod.summary(
+            projected if projected is not None else available,
+            HISTORY, LEAGUE_SIZE, current_pick, next_pick, POINTS_COL)
         if not panel.empty:
             print()
-            print(indent(f"cost of waiting from #{current_pick} to #{next_pick}"))
+            label = (f"cost of waiting from #{current_pick} to #{next_pick}"
+                     if on_clock else
+                     f"at your pick #{current_pick}, cost of waiting to "
+                     f"#{next_pick} (board projected forward)")
+            print(indent(label))
             print(indent(table_mod.render(panel)))
     print()
 

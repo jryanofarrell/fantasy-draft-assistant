@@ -54,6 +54,32 @@ def expected_gone(
     return totals
 
 
+def project(
+    board: pd.DataFrame,
+    history: dict | None,
+    teams: int,
+    from_pick: int,
+    to_pick: int,
+    points_col: str = "AVG",
+) -> pd.DataFrame:
+    """The board as it is likely to look by `to_pick`.
+
+    Pricing the gap at your next pick against today's board is wrong once
+    that pick is far away: it will name a fallback who is already gone by
+    then. Removing the players expected to go in between gives a board of
+    roughly the right depth to ask the question against.
+    """
+    if not history or to_pick <= from_pick + 1 or board.empty:
+        return board
+    gone = expected_gone(history, teams, from_pick, to_pick)
+    drop = []
+    for position, count in gone.items():
+        pool = board[board["Position"] == position].sort_values(
+            points_col, ascending=False)
+        drop.extend(pool.head(int(round(count))).index)
+    return board.drop(index=drop)
+
+
 def next_available(
     board: pd.DataFrame, position: str, gone: float, points_col: str = "AVG"
 ) -> tuple[float, str]:

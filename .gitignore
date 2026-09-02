@@ -19,3 +19,6 @@ league/draft_history.json
 
 # Simulation output
 sim*.txt
+
+# Simulation preview output
+draft-preview.txt
