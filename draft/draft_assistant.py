@@ -381,7 +381,9 @@ def run_live(args):
         show_board(available, my_roster, opening_next, following,
                    on_clock=(start == opening_next),
                    projected=vona_mod.project(available, HISTORY, LEAGUE_SIZE,
-                                              start, opening_next, POINTS_COL))
+                                              start, opening_next, POINTS_COL),
+                   panel_window=None if start == opening_next
+                   else (start - 1, opening_next))
         shown_for = opening_next if start == opening_next else None
 
     previous = None
@@ -452,7 +454,9 @@ def run_live(args):
                     projected = vona_mod.project(available, HISTORY, LEAGUE_SIZE,
                                                  next_overall, mine_next, POINTS_COL)
                     show_board(available, my_roster, mine_next, following,
-                               on_clock=on_clock, projected=projected)
+                               on_clock=on_clock, projected=projected,
+                               panel_window=(next_overall - 1, mine_next)
+                               if not on_clock else None)
                 if on_clock:
                     shown_for = next_overall
 
@@ -473,7 +477,7 @@ def indent(text: str) -> str:
 
 
 def show_board(available, my_roster, current_pick, next_pick, on_clock=False,
-               projected=None):
+               projected=None, panel_window=None):
     """Top-ten board, indented beneath the pick line.
 
     VONA is always present rather than appearing only when it has something
@@ -495,9 +499,13 @@ def show_board(available, my_roster, current_pick, next_pick, on_clock=False,
     print(indent(table_mod.render(view, index_name="#")))
 
     if next_pick and next_pick > current_pick + 1:
-        panel = vona_mod.summary(
-            projected if projected is not None else available,
-            HISTORY, LEAGUE_SIZE, current_pick, next_pick, POINTS_COL)
+        # The panel always reads the real board. Its job is to say who is
+        # actually top of each position right now, not who a projection
+        # guesses will still be there — the projection belongs in the VONA
+        # column, which is explicitly about a future pick.
+        start, end = panel_window or (current_pick, next_pick)
+        panel = vona_mod.summary(available, HISTORY, LEAGUE_SIZE,
+                                 start, end, POINTS_COL)
         if not panel.empty:
             print()
             label = "top available at every position"
