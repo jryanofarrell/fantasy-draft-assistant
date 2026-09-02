@@ -118,7 +118,8 @@ that and use whatever interpreter you invoked it with.
 | `./run.py league` | Prints the active league config. |
 | `./run.py espn` | Diffs `league.yaml` against live ESPN settings. `--write` saves them to `league/league.espn.yaml`. |
 | `./run.py history` | Positional draft tendencies from the league's own past drafts. Refreshes the VONA cache. |
-| `./run.py live` | Follows a live draft and prints picks as they land. `--provider sleeper --draft-id N` for Sleeper, `--league-id N` for an ESPN mock lobby. |
+| `./run.py draft --live` | Follows a real draft: absorbs every pick automatically, and shows the board when you're on the clock. Nothing to type. |
+| `./run.py live` | Bare pick feed, no board. Same connection flags. |
 
 Run `./run.py` with no arguments for the command list.
 
@@ -288,16 +289,36 @@ must type names exactly as `Name (POS)`.
 
 ## Running a draft
 
+### Live (recommended)
+
+```bash
+./run.py draft --live
+```
+
+It watches the draft and absorbs picks as they land, so you draft in ESPN as
+normal and never type anything here. Other managers' picks print one line each,
+annotated with what you're losing:
+
+```
+         #1   R1  The Toney Brothas  Bijan Robinson (RB)  [314.9 pts, VOR 170.0]
+         #2   R1  If you autodraft y Ja'Marr Chase (WR)  [277.0 pts, VOR 132.2]
+>>> YOU  #4   R1  Deep Balls Deep    Saquon Barkley (RB)  [239.1 pts, VOR 94.2]
+        roster: Starters: 1/8 | Bench: 0/4 | Starter Pts: 239.1
+```
+
+When you're on the clock it prints the suggestion board, the per-position cost
+of waiting, and your roster so far — once, not on every poll. Kickers and
+defenses are reported but marked unprojected, since the tool doesn't rank them.
+
+Other flags: `--interval` (default 5s), `--provider sleeper --draft-id N`,
+`--league-id N` for an ESPN mock lobby, `--season` to replay a past draft.
+
+### Manual
+
 ```bash
 ./run.py draft
 ```
 
-At each pick:
-
-- **Your pick** — press Enter to take the top suggestion, or type `Name (POS)`.
-- **Another team's pick** — type what they took, or `auto` / Enter to assume
-  they took the best available by VOR.
-- `quit` / `exit` to stop early.
-
-It ends after 13 roster spots (8 starters + 5 bench) and prints your final
-starters and bench.
+Type each pick yourself. At each one: press Enter to take the top suggestion or
+type `Name (POS)`; for another team type what they took, or `auto` to assume
+the best available by VOR. `quit` to stop early.

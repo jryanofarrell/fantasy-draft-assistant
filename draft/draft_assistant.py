@@ -1,9 +1,14 @@
 # draft_assistant.py
+import argparse
+import time
+
 import pandas as pd
 import numpy as np
 
 from league import draft_history, league
+from draft import live as live_mod
 from draft import vona as vona_mod
+from players.names import normalize_name
 
 from config import (
     BENCH_SLOTS,
@@ -79,6 +84,9 @@ rep_val, rep_idx, flex_taken = compute_replacements(dfs, LEAGUE_SIZE, ROSTER_SLO
 
 # Positional tendencies from this league's own past drafts, used for VONA.
 HISTORY = draft_history.load()
+
+# Starting slots the assistant actually drafts for (K and D/ST excluded).
+DRAFTED_STARTERS = sum(ROSTER_SLOTS.values())
 
 # ===== Build VOR pool =====
 frames = []
@@ -234,17 +242,174 @@ def suggest_top(available: pd.DataFrame, my_roster: pd.DataFrame, k: int = 10,
     return pre.head(k)[["Player", "Position", POINTS_COL, "VOR", "MarginalGain",
                         "VONA", "Key"]].reset_index(drop=True)
 
+def find_in_board(board: pd.DataFrame, name: str, position: str):
+    """Locate a drafted player on our board.
+
+    Live feeds spell names their own way, so match on the same normalised
+    form the projection sources are merged with rather than raw text.
+    """
+    if board.empty:
+        return None
+    target = normalize_name(name)
+    hits = board[
+        board["Player"].map(normalize_name).eq(target)
+        & board["Position"].str.upper().eq(str(position).upper())
+    ]
+    if hits.empty:
+        hits = board[board["Player"].map(normalize_name).eq(target)]
+    return hits.index[0] if len(hits) else None
+
+
 def pretty_roster_summary(my_roster: pd.DataFrame):
     if my_roster.empty:
-        return "Starters: 0/8 | Bench: 0/5"
+        return f"Starters: 0/{DRAFTED_STARTERS} | Bench: 0/{BENCH_SLOTS}"
     starters_idx = best_starting_lineup_indices(my_roster)
     starters = my_roster.loc[list(starters_idx)]
     bench = my_roster.drop(index=list(starters_idx), errors="ignore")
-    return (f"Starters: {len(starters)}/8 | Bench: {len(bench)}/{BENCH_SLOTS} | "
+    return (f"Starters: {len(starters)}/{DRAFTED_STARTERS} | Bench: {len(bench)}/{BENCH_SLOTS} | "
             f"Starter Pts: {starters[POINTS_COL].sum():.1f}")
 
 # ===== Interactive loop =====
+def parse_args(argv=None):
+    ap = argparse.ArgumentParser(description="Interactive snake-draft assistant")
+    ap.add_argument("--live", action="store_true",
+                    help="follow a real draft instead of typing every pick")
+    ap.add_argument("--provider", choices=["espn", "sleeper"], default="espn")
+    ap.add_argument("--league-id", help="ESPN league or mock-lobby id")
+    ap.add_argument("--draft-id", help="Sleeper draft id")
+    ap.add_argument("--interval", type=float, default=5.0,
+                    help="seconds between polls in live mode")
+    ap.add_argument("--season", type=int, default=SEASON,
+                    help="season to follow; useful for replaying a past draft")
+    return ap.parse_args(argv)
+
+
+def apply_pick(available, my_roster, entry, mine: bool):
+    """Remove a drafted player from the board, adding him to your roster.
+
+    Returns the updated frames and the matched row, or None when the player
+    isn't on our board at all — kickers and defenses have no projections, and
+    a very deep pick may be outside every source.
+    """
+    idx = find_in_board(available, entry["player"], entry["position"])
+    if idx is None:
+        return available, my_roster, None
+    row = available.loc[idx]
+    if mine:
+        my_roster = pd.concat([my_roster, row.to_frame().T], ignore_index=True)
+    return available.drop(index=idx).reset_index(drop=True), my_roster, row
+
+
+def run_live(args):
+    """Watch a draft: advise on your picks, absorb everyone else's."""
+    available = ranked_overall.copy()
+    my_roster = ranked_overall.iloc[0:0].copy()
+
+    draft = live_mod.connect(args.provider, args.league_id, args.draft_id, args.season)
+    if isinstance(draft, live_mod.EspnDraft):
+        draft.prefetch()
+
+    print(f"\n=== Live draft — {args.provider} ===")
+    print(league.summary(LEAGUE))
+    if HISTORY:
+        print(f"  Draft history: {len(HISTORY.get('seasons', []))} seasons "
+              f"informing VONA")
+    my_schedule = vona_mod.my_picks(MY_SLOT, LEAGUE_SIZE,
+                                    LEAGUE.drafted_roster_size + 4)
+    print(f"  Your picks: {', '.join(str(p) for p in my_schedule[:6])}...")
+    print(f"\nPolling every {args.interval}s. Draft in your provider as normal; "
+          f"Ctrl-C to stop.\n")
+
+    shown_for = None
+    try:
+        while True:
+            state = draft.state()
+            for entry in draft.new_picks(state):
+                mine = entry["overall"] in my_schedule
+                available, my_roster, row = apply_pick(
+                    available, my_roster, entry, mine)
+                marker = ">>> YOU" if mine else "        "
+                extra = ""
+                if row is not None:
+                    extra = f"  [{row[POINTS_COL]:.1f} pts, VOR {row['VOR']:.1f}]"
+                elif entry["position"] in {"K", "D/ST", "DEF"}:
+                    extra = "  [not projected — drafted by feel]"
+                else:
+                    extra = "  [not on board]"
+                print(f"{marker} {live_mod.format_pick(entry)}{extra}", flush=True)
+                if mine:
+                    print(f"        roster: {pretty_roster_summary(my_roster)}")
+                shown_for = None
+
+            if state["complete"]:
+                print("\ndraft complete")
+                break
+
+            # On the clock: show the board once, then wait for the pick to land.
+            # Raw provider picks use their own key names; only the normalised
+            # dicts from new_picks() carry "overall".
+            made = {
+                p.get("overallPickNumber") or p.get("pick_no")
+                for p in state["picks"]
+                if p.get("playerId", -1) > 0 or p.get("pick_no")
+            }
+            made.discard(None)
+            next_overall = (max(made) + 1) if made else 1
+            if next_overall in my_schedule and shown_for != next_overall:
+                shown_for = next_overall
+                upcoming = [p for p in my_schedule if p >= next_overall]
+                following = upcoming[1] if len(upcoming) > 1 else None
+                show_board(available, my_roster, next_overall, following)
+                print(f"\n>>> YOU ARE ON THE CLOCK (pick {next_overall}) — "
+                      f"draft in {args.provider}; this will pick it up.\n")
+
+            time.sleep(args.interval)
+    except KeyboardInterrupt:
+        print("\nstopped")
+
+    if len(my_roster):
+        print_final_roster(my_roster)
+    return 0
+
+
+def show_board(available, my_roster, current_pick, next_pick):
+    """The suggestion table plus what waiting would cost."""
+    sugg = suggest_top(available, my_roster, k=LEAGUE.suggestions,
+                       current_pick=current_pick, next_pick=next_pick)
+    if sugg.empty:
+        print("No candidates to suggest.")
+        return
+    view = sugg[["Player", "Position", POINTS_COL, "VOR", "MarginalGain",
+                 "VONA"]].rename(columns={POINTS_COL: "AVG"})
+    print(f"\n--- Your pick #{current_pick} ---")
+    print(view.to_string(index=True))
+    if next_pick:
+        gap = next_pick - current_pick - 1
+        print(f"\nWaiting until pick {next_pick} costs you ({gap} picks away):")
+        print(vona_mod.summary(available, HISTORY, LEAGUE_SIZE,
+                               current_pick, next_pick, POINTS_COL).to_string(index=False))
+    print(f"\n[{pretty_roster_summary(my_roster)}]")
+
+
+def print_final_roster(my_roster):
+    starters_idx = best_starting_lineup_indices(my_roster)
+    starters = my_roster.loc[list(starters_idx)]
+    bench = my_roster.drop(index=list(starters_idx), errors="ignore")
+    print("\n=== Your Starters ===")
+    print(starters.sort_values(["Position", POINTS_COL], ascending=[True, False])
+          [["Player", "Position", POINTS_COL, "VOR"]]
+          .rename(columns={POINTS_COL: "AVG"}).to_string(index=False))
+    if not bench.empty:
+        print("\n--- Bench ---")
+        print(bench.sort_values(["VOR", POINTS_COL], ascending=[False, False])
+              [["Player", "Position", POINTS_COL, "VOR"]]
+              .rename(columns={POINTS_COL: "AVG"}).to_string(index=False))
+
+
 def main():
+    args = parse_args()
+    if args.live:
+        return run_live(args)
     available = ranked_overall.copy()
     my_roster = ranked_overall.iloc[0:0].copy()  # empty with same columns
 
@@ -403,4 +568,4 @@ def main():
                       .rename(columns={POINTS_COL: "AVG"}).to_string(index=False))
 
 if __name__ == "__main__":
-    main()
+    raise SystemExit(main() or 0)
