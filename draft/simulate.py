@@ -33,6 +33,10 @@ class SimulatedDraft:
         self.order = order
         self.rng = random.Random(seed)
         self.taken: set[str] = set()
+        # run_live reads state once to resolve your team before the loop; the
+        # draft should not advance on that read, or the simulation opens at
+        # pick two and you never see the pre-draft board.
+        self.started = False
         self.picks: list[dict] = []
         self._seen: set[int] = set()
 
@@ -74,10 +78,14 @@ class SimulatedDraft:
         return self.order[seat if rnd % 2 == 1 else self.teams - 1 - seat]
 
     def state(self) -> dict:
-        nxt = len(self.picks) + 1
-        pick = self._choose(nxt)
-        if pick:
-            self.picks.append(pick)
+        pick = True
+        if not self.started:
+            self.started = True
+        else:
+            nxt = len(self.picks) + 1
+            pick = self._choose(nxt)
+            if pick:
+                self.picks.append(pick)
         # Expose every remaining slot so the header can name who is up next,
         # matching ESPN, which pre-creates all of them.
         rounds = 15
