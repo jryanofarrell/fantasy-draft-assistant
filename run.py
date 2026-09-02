@@ -9,7 +9,7 @@
     ./run.py espn --write             # diff league.yaml against ESPN
 
 Running from the repo root puts it on sys.path, so every module can use
-absolute imports (`from league.config import ...`) with no path shims.
+absolute imports (`from config import ...`) with no path shims.
 Arguments after the command are passed straight through.
 """
 import os
@@ -43,8 +43,8 @@ def reexec_in_venv() -> None:
 COMMANDS = {
     "draft": ("draft.draft_assistant", "Interactive snake-draft assistant"),
     "rankings": ("draft.fantasy_rankings", "Write flex-aware VOR rankings"),
-    "projections": ("data_scripts.download_projections", "Download CBS projections"),
-    "combine": ("data_scripts.combine_data", "Merge sheets into FULL-Table"),
+    "projections": ("players.download_projections", "Download CBS projections"),
+    "combine": ("players.combine_data", "Merge sheets into FULL-Table"),
     "league": ("league.league", "Print the active league config"),
     "espn": ("league.import_espn_league", "Diff league.yaml against ESPN"),
 }

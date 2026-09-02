@@ -25,7 +25,7 @@ import requests
 import yaml
 
 from league import league as league_mod
-from league.config import REPO_ROOT, SEASON
+from config import REPO_ROOT, SEASON
 
 AUTH_FILE = REPO_ROOT / "auth"
 BASE = "https://lm-api-reads.fantasy.espn.com/apis/v3/games/ffl"

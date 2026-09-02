@@ -14,7 +14,7 @@ import pandas as pd
 import requests
 import requests_cache
 
-from league.config import LEAGUE, POSITIONS, SEASON, data_dir, position_file
+from config import LEAGUE, POSITIONS, SEASON, data_dir, position_file
 
 URL_TEMPLATE = (
     "https://www.cbssports.com/fantasy/football/stats/"

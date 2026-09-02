@@ -4,7 +4,7 @@ import numpy as np
 
 from league import league
 
-from league.config import (
+from config import (
     BENCH_SLOTS,
     LEAGUE,
     FLEX_ELIGIBLE,

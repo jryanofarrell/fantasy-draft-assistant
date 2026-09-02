@@ -1,4 +1,4 @@
-"""Settings and paths, sourced from `league.yaml`.
+"""Settings and paths, sourced from `league/league.yaml`.
 
 Edit `league.yaml`, not this file. These module-level names exist so the
 draft scripts can keep importing plain constants.
@@ -22,7 +22,7 @@ POINTS_COL = LEAGUE.points_column
 POSITIONS = LEAGUE.positions
 
 # ===== Files =====
-REPO_ROOT = Path(__file__).resolve().parent.parent
+REPO_ROOT = Path(__file__).resolve().parent
 FILE_TEMPLATE = "{pos}-Table 1.csv"
 
 

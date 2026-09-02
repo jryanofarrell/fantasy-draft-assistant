@@ -1,7 +1,7 @@
 
 import pandas as pd
 
-from league.config import SEASON, data_dir, position_file
+from config import SEASON, data_dir, position_file
 
 position_numbers = {
     "QB": 12,

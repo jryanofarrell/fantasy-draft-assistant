@@ -1,1 +1,0 @@
-"""Projection download and assembly."""

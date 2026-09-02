@@ -81,23 +81,23 @@ them yourself.
 
 ```
 run.py                 entry point for everything
+config.py              league settings + data paths, shared by all scripts
 league/                what the league's rules are
   league.yaml            the settings (edit this)
   league.py              loads and validates them
-  config.py              bridges them to the scripts, resolves paths
   import_espn_league.py  pulls live settings from ESPN
+players/               getting player projections
+  download_projections.py  scrape CBS
+  combine_data.py          merge sheets into FULL-Table
 draft/                 drafting tools
   draft_assistant.py     interactive snake-draft assistant
   fantasy_rankings.py    standalone VOR rankings
-data_scripts/          getting projections
-  download_projections.py  scrape CBS
-  combine_data.py          merge sheets into FULL-Table
 data/<season>/         the projection sheets (gitignored)
 auth                   ESPN credentials (gitignored)
 ```
 
 Everything runs through `run.py`, which puts the repo root on `sys.path` so
-modules can use absolute imports (`from league.config import ...`) without
+modules can use absolute imports (`from config import ...`) without
 path shims. Running the scripts directly will not work.
 
 `run.py` re-execs itself under `.venv` if started outside it, so `./run.py`
