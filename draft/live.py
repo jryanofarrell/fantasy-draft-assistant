@@ -79,6 +79,22 @@ class EspnDraft:
                 ESPN_POSITIONS.get(entry.get("defaultPositionId"), "?"),
             )
 
+    def my_team_id(self) -> int | None:
+        """Which team the authenticated user owns, by SWID.
+
+        Draft *slot* is re-randomised every season, so identifying your picks
+        by slot arithmetic silently mislabels them whenever the configured
+        slot doesn't match the season being read. Ownership does not move.
+        """
+        auth = espn_api.read_auth()
+        swid = (auth.get("ESPN_SWID") or "").strip("{}").lower()
+        for team in self.state().get("teams_raw", []):
+            owners = [str(o).strip("{}").lower() for o in (team.get("owners") or [])]
+            if swid and swid in owners:
+                return team.get("id")
+        team_id = auth.get("ESPN_TEAM_ID")
+        return int(team_id) if team_id else None
+
     def state(self) -> dict:
         resp = requests.get(
             self.url, headers=espn_api.HEADERS, cookies=self.cookies,
@@ -95,6 +111,7 @@ class EspnDraft:
             "picks": detail.get("picks", []),
             "teams": {t["id"]: (t.get("name") or f"Team {t['id']}").strip()
                       for t in payload.get("teams", [])},
+            "teams_raw": payload.get("teams", []),
         }
 
     def new_picks(self, state: dict | None = None) -> list[dict]:

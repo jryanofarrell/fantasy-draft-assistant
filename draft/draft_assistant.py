@@ -316,6 +316,28 @@ def run_live(args):
               f"informing VONA")
     my_schedule = vona_mod.my_picks(MY_SLOT, LEAGUE_SIZE,
                                     LEAGUE.drafted_roster_size + 4)
+
+    # Ownership beats slot arithmetic: draft order is reshuffled every season,
+    # so a configured slot can silently mislabel picks in another season.
+    my_team_id = None
+    if isinstance(draft, live_mod.EspnDraft):
+        try:
+            my_team_id = draft.my_team_id()
+        except Exception:
+            my_team_id = None
+    state0 = draft.state()
+    if my_team_id is not None:
+        name = state0["teams"].get(my_team_id, f"team {my_team_id}")
+        print(f"  You are: {name} (team {my_team_id})")
+        owned = [p.get("overallPickNumber") for p in state0["picks"]
+                 if p.get("teamId") == my_team_id]
+        owned = sorted(x for x in owned if x)
+        if owned:
+            if owned[:len(my_schedule)] != my_schedule[:len(owned)]:
+                print(f"  ! league.yaml says slot {MY_SLOT} (picks "
+                      f"{my_schedule[:3]}), but this draft gives you "
+                      f"{owned[:3]} — using the draft.")
+            my_schedule = owned
     print(f"  Your picks: {', '.join(str(p) for p in my_schedule[:6])}...")
     print(f"\nPolling every {args.interval}s. Draft in your provider as normal; "
           f"Ctrl-C to stop.\n")
@@ -325,7 +347,9 @@ def run_live(args):
         while True:
             state = draft.state()
             for entry in draft.new_picks(state):
-                mine = entry["overall"] in my_schedule
+                mine = (entry.get("team_id") == my_team_id
+                        if my_team_id is not None
+                        else entry["overall"] in my_schedule)
                 available, my_roster, row = apply_pick(
                     available, my_roster, entry, mine)
                 marker = ">>> YOU" if mine else "        "
