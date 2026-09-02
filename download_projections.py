@@ -1,8 +1,8 @@
 """Download CBS season projections and write per-position draft sheets.
 
 Produces `data/<season>/<POS>-Table 1.csv` with the `Player` / `AVG` columns
-the draft assistant expects, where `AVG` is CBS's projected season fantasy
-points (PPR).
+the draft assistant expects, where `AVG` is projected season fantasy points
+converted to the league's reception scoring (see `league.yaml`).
 
     python download_projections.py --season 2026
 """
@@ -14,7 +14,7 @@ import pandas as pd
 import requests
 import requests_cache
 
-from config import POSITIONS, SEASON, data_dir, position_file
+from config import LEAGUE, POSITIONS, SEASON, data_dir, position_file
 
 URL_TEMPLATE = (
     "https://www.cbssports.com/fantasy/football/stats/"
@@ -23,6 +23,9 @@ URL_TEMPLATE = (
 HEADERS = {
     "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) Safari/537.36"
 }
+
+# We scrape CBS's PPR pages, which award 1 point per reception.
+SOURCE_RECEPTION_POINTS = 1.0
 
 # CBS renders the player cell as:
 #   "J. Gibbs  RB  DET  Jahmyr Gibbs  RB  DET"
@@ -67,6 +70,23 @@ def dedupe(names: list[str]) -> list[str]:
     return out
 
 
+def to_league_points(
+    points: pd.Series,
+    receptions: pd.Series,
+    reception_points: float,
+    source_reception_points: float = SOURCE_RECEPTION_POINTS,
+) -> pd.Series:
+    """Restate PPR points under the league's per-reception value.
+
+    Only the reception term differs between scoring formats, so rather than
+    recomputing fantasy points from the stat line — which would have to
+    reproduce CBS's bonuses and rounding exactly — we adjust that one term
+    and leave the rest of their projection untouched.
+    """
+    delta = source_reception_points - reception_points
+    return points - delta * receptions.fillna(0)
+
+
 def fetch_position(pos: str, season: int) -> pd.DataFrame:
     url = URL_TEMPLATE.format(pos=pos, season=season)
     html = requests.get(url, headers=HEADERS, timeout=30).text
@@ -87,14 +107,25 @@ def fetch_position(pos: str, season: int) -> pd.DataFrame:
     stats = df.iloc[:, 1:]
     stats.columns = dedupe([shorten(c) for c in stats.columns])
 
+    ppr_points = pd.to_numeric(df[points_col], errors="coerce")
+    # QB sheets carry no reception column; nothing to convert there.
+    receptions = (
+        pd.to_numeric(stats["rec"], errors="coerce")
+        if "rec" in stats.columns
+        else pd.Series(0.0, index=stats.index)
+    )
+
     out = pd.DataFrame(
         {
             "Player": [p[0] for p in parsed],
             "Team": [p[2] for p in parsed],
             "Position": pos,
-            # The draft assistant ranks on AVG; CBS gives a single projection
+            # The draft assistant ranks on AVG. CBS gives a single projection
             # rather than the LOW/AVG/HIGH band the old BeerSheets exports had.
-            "AVG": pd.to_numeric(df[points_col], errors="coerce"),
+            "AVG": to_league_points(
+                ppr_points, receptions, LEAGUE.reception_points
+            ),
+            "PPR": ppr_points,
         }
     ).join(stats)
 
@@ -114,6 +145,11 @@ def main() -> None:
     # Cache responses so repeated runs during a draft don't re-hit CBS.
     requests_cache.install_cache(str(out_dir / "cbs_cache"), expire_after=3600)
 
+    print(
+        f"Scoring: {LEAGUE.scoring_type} "
+        f"({LEAGUE.reception_points} pts/reception; CBS source is "
+        f"{SOURCE_RECEPTION_POINTS})"
+    )
     for pos in POSITIONS:
         df = fetch_position(pos, args.season)
         dest = position_file(pos, args.season)

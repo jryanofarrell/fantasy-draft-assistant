@@ -18,7 +18,7 @@ rather than the scripts.
 | Season | 2026 |
 | League size | 12 teams |
 | Draft slot | 12 |
-| Scoring | half PPR (0.5 pts/reception) |
+| Scoring | half PPR (0.5 pts/reception, converted on download) |
 | Starters | QB 1, RB 2, WR 2, TE 1, FLEX 2 |
 | Flex eligible | RB / WR / TE |
 | Bench | 5 |
@@ -92,14 +92,29 @@ Each sheet carries `Player`, `Team`, `Position`, `AVG` (CBS projected season
 PPR points) and the underlying stat columns. `AVG` is what every downstream
 script ranks on.
 
-### Scoring mismatch
+### Scoring conversion
 
-⚠️ The sheets are currently CBS's **full PPR** projections, but the league is
-**half PPR**. Receiving-heavy players are therefore overvalued relative to
-their real value in this league. CBS only publishes `ppr` and `nonppr`
-endpoints — no half-PPR — and the two do not differ by receptions alone, so
-half-PPR numbers have to be computed from the projected stat lines using the
-scoring rules in `league.yaml`. **This is not done yet.**
+CBS publishes `ppr` and `nonppr` pages but no half-PPR, so `AVG` is converted
+on download to the league's per-reception value from `league.yaml`:
+
+```
+AVG = CBS_PPR_points − (1.0 − reception_points) × receptions
+```
+
+Only the reception term differs between scoring formats, so this adjusts that
+one term and leaves the rest of CBS's projection alone — rather than
+recomputing points from the stat line, which would have to reproduce their
+bonuses and rounding exactly. Each sheet keeps the unmodified CBS number in a
+`PPR` column next to the converted `AVG`, so the conversion is auditable.
+
+This needs only a reception count, not a full stat line — both CBS (`rec`)
+and the older BeerSheets exports (`REC`) carry one. Quarterback sheets have no
+reception column and are passed through unchanged.
+
+> CBS's own `ppr` and `nonppr` pages differ by more than receptions (Jahmyr
+> Gibbs by 16.5 points), so they are not internally consistent. This
+> conversion treats the PPR projection as the source of truth and assumes
+> half PPR differs from it only in the per-reception value.
 
 ### Source note
 
