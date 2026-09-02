@@ -88,6 +88,11 @@ HISTORY = draft_history.load()
 # Starting slots the assistant actually drafts for (K and D/ST excluded).
 DRAFTED_STARTERS = sum(ROSTER_SLOTS.values())
 
+# Candidates scored for marginal gain before taking the top k. Marginal gain
+# reorders players but never lifts one past dozens of higher-VOR peers, so a
+# deep pool costs time without changing the board.
+CANDIDATE_POOL = 50
+
 # ===== Build VOR pool =====
 frames = []
 for pos, d in dfs.items():
@@ -186,10 +191,27 @@ def best_starting_lineup_points(roster_df: pd.DataFrame) -> float:
     idxs = best_starting_lineup_indices(roster_df)
     return float(roster_df.loc[list(idxs), POINTS_COL].sum()) if idxs else 0.0
 
-def marginal_gain(my_roster: pd.DataFrame, candidate_row: pd.Series) -> float:
-    before = best_starting_lineup_points(pd.concat([skeleton, my_roster], ignore_index=True))
-    after = best_starting_lineup_points(pd.concat([skeleton, my_roster, candidate_row.to_frame().T], ignore_index=True))
+def marginal_gain(my_roster: pd.DataFrame, candidate_row: pd.Series,
+                  before: float | None = None) -> float:
+    """How much a candidate improves your best legal starting lineup.
+
+    `before` is the lineup without him, which is the same for every candidate
+    on a given roster — pass it in when scoring a batch rather than paying for
+    it once per player.
+    """
+    if before is None:
+        before = best_starting_lineup_points(
+            pd.concat([skeleton, my_roster], ignore_index=True))
+    after = best_starting_lineup_points(
+        pd.concat([skeleton, my_roster, candidate_row.to_frame().T], ignore_index=True))
     return float(after - before)
+
+
+def score_candidates(pre: pd.DataFrame, my_roster: pd.DataFrame) -> list[float]:
+    """Marginal gain for a batch of candidates, baseline computed once."""
+    before = best_starting_lineup_points(
+        pd.concat([skeleton, my_roster], ignore_index=True))
+    return [marginal_gain(my_roster, r, before) for _, r in pre.iterrows()]
 
 def suggest_top_by_positions(available: pd.DataFrame, my_roster: pd.DataFrame,
                              positions: set[str], k: int = 10) -> pd.DataFrame:
@@ -200,12 +222,8 @@ def suggest_top_by_positions(available: pd.DataFrame, my_roster: pd.DataFrame,
     cand = cand.dropna(subset=[POINTS_COL, "VOR"])
 
     # prefilter for speed
-    pre = cand.nlargest(min(len(cand), 120), ["VOR", POINTS_COL]).copy()
-
-    gains = []
-    for _, r in pre.iterrows():
-        gains.append(marginal_gain(my_roster, r))
-    pre["MarginalGain"] = gains
+    pre = cand.nlargest(min(len(cand), CANDIDATE_POOL), ["VOR", POINTS_COL]).copy()
+    pre["MarginalGain"] = score_candidates(pre, my_roster)
 
     pre = pre.sort_values(["MarginalGain", "VOR", POINTS_COL],
                           ascending=[False, False, False])
@@ -222,12 +240,8 @@ def suggest_top(available: pd.DataFrame, my_roster: pd.DataFrame, k: int = 10,
     cand = cand.dropna(subset=[POINTS_COL, "VOR"])
 
     # prefilter for speed
-    pre = cand.nlargest(min(len(cand), 120), ["VOR", POINTS_COL]).copy()
-
-    gains = []
-    for _, r in pre.iterrows():
-        gains.append(marginal_gain(my_roster, r))
-    pre["MarginalGain"] = gains
+    pre = cand.nlargest(min(len(cand), CANDIDATE_POOL), ["VOR", POINTS_COL]).copy()
+    pre["MarginalGain"] = score_candidates(pre, my_roster)
     if current_pick is not None:
         pre["VONA"] = vona_mod.compute(
             pre, HISTORY, LEAGUE_SIZE, current_pick, next_pick, POINTS_COL
@@ -235,10 +249,12 @@ def suggest_top(available: pd.DataFrame, my_roster: pd.DataFrame, k: int = 10,
     else:
         pre["VONA"] = 0.0
 
-    # VONA orders the board, but marginal gain still breaks ties: a player
-    # who cannot crack your starting lineup is worth less than his scarcity
-    # suggests.
-    pre = pre.sort_values(["VONA", "MarginalGain", "VOR"], ascending=False)
+    # Marginal gain orders the board. VONA is a *positional* measure — best
+    # RB now versus best RB later — so per player it is negative for anyone
+    # who isn't the best at his position, and sorting on it would bury every
+    # second-best player behind the top man at each spot. It rides along as
+    # information, and the per-position panel is where it does its work.
+    pre = pre.sort_values(["MarginalGain", "VOR", POINTS_COL], ascending=False)
     return pre.head(k)[["Player", "Position", POINTS_COL, "VOR", "MarginalGain",
                         "VONA", "Key"]].reset_index(drop=True)
 
@@ -361,8 +377,11 @@ def run_live(args):
                 else:
                     extra = "  [not on board]"
                 print(f"{marker} {live_mod.format_pick(entry)}{extra}", flush=True)
-                if mine:
-                    print(f"        roster: {pretty_roster_summary(my_roster)}")
+                upcoming = [p for p in my_schedule if p > entry["overall"]]
+                nxt = upcoming[0] if upcoming else None
+                following = upcoming[1] if len(upcoming) > 1 else None
+                if nxt is not None:
+                    show_board(available, my_roster, nxt, following)
                 shown_for = None
 
             if state["complete"]:
@@ -383,7 +402,8 @@ def run_live(args):
                 shown_for = next_overall
                 upcoming = [p for p in my_schedule if p >= next_overall]
                 following = upcoming[1] if len(upcoming) > 1 else None
-                show_board(available, my_roster, next_overall, following)
+                show_board(available, my_roster, next_overall, following,
+                           on_clock=True)
                 print(f"\n>>> YOU ARE ON THE CLOCK (pick {next_overall}) — "
                       f"draft in {args.provider}; this will pick it up.\n")
 
@@ -396,22 +416,45 @@ def run_live(args):
     return 0
 
 
-def show_board(available, my_roster, current_pick, next_pick):
-    """The suggestion table plus what waiting would cost."""
+def show_board(available, my_roster, current_pick, next_pick, on_clock=False):
+    """The complete picture: suggestions, cost of waiting, RB/WR, your roster.
+
+    VONA is always anchored to *your* next pick rather than the pick that just
+    happened, so the numbers answer the same question all the way through:
+    what does waiting until my turn cost me.
+    """
     sugg = suggest_top(available, my_roster, k=LEAGUE.suggestions,
                        current_pick=current_pick, next_pick=next_pick)
     if sugg.empty:
         print("No candidates to suggest.")
         return
+
+    header = (f"--- ON THE CLOCK: your pick #{current_pick} ---" if on_clock
+              else f"--- board (your next pick: #{current_pick}) ---")
+    print(f"\n{header}")
     view = sugg[["Player", "Position", POINTS_COL, "VOR", "MarginalGain",
                  "VONA"]].rename(columns={POINTS_COL: "AVG"})
-    print(f"\n--- Your pick #{current_pick} ---")
     print(view.to_string(index=True))
+
     if next_pick:
         gap = next_pick - current_pick - 1
-        print(f"\nWaiting until pick {next_pick} costs you ({gap} picks away):")
-        print(vona_mod.summary(available, HISTORY, LEAGUE_SIZE,
-                               current_pick, next_pick, POINTS_COL).to_string(index=False))
+        if gap <= 0:
+            print(f"\nBack-to-back picks (#{current_pick} then #{next_pick}) — "
+                  f"nothing comes off the board between them, so waiting costs "
+                  f"nothing.")
+        else:
+            print(f"\nWaiting from #{current_pick} until #{next_pick} costs "
+                  f"({gap} picks between):")
+            print(vona_mod.summary(available, HISTORY, LEAGUE_SIZE, current_pick,
+                                   next_pick, POINTS_COL).to_string(index=False))
+
+    rbwr = suggest_top_by_positions(available, my_roster, {"RB", "WR"},
+                                    k=LEAGUE.suggestions)
+    if not rbwr.empty:
+        print("\nTop RB/WR:")
+        print(rbwr[["Player", "Position", POINTS_COL, "VOR", "MarginalGain"]]
+              .rename(columns={POINTS_COL: "AVG"}).to_string(index=True))
+
     print(f"\n[{pretty_roster_summary(my_roster)}]")
 
 
