@@ -303,6 +303,21 @@ def parse_args(argv=None):
     return ap.parse_args(argv)
 
 
+def window_for(on_clock_pick: int, my_next: int, schedule: list[int],
+               is_mine: bool) -> tuple[int, int]:
+    """The stretch of picks VONA prices.
+
+    On the clock, waiting means passing to your following pick. Otherwise it
+    means waiting out everyone between now and your turn — and the pick
+    currently on the clock has not happened yet, so it belongs inside the
+    window.
+    """
+    if is_mine:
+        following = next((p for p in schedule if p > my_next), None)
+        return my_next, following
+    return on_clock_pick - 1, my_next
+
+
 def apply_pick(available, my_roster, entry, mine: bool):
     """Remove a drafted player from the board, adding him to your roster.
 
@@ -378,12 +393,10 @@ def run_live(args):
         print(f"Pick #{start} Round{(start - 1) // LEAGUE_SIZE + 1}"
               f"{' ' + on_the_clock.get(start, '') if on_the_clock.get(start) else ''}"
               f"{'  <<< YOU ARE ON THE CLOCK' if start == opening_next else ''}")
-        show_board(available, my_roster, opening_next, following,
-                   on_clock=(start == opening_next),
-                   projected=vona_mod.project(available, HISTORY, LEAGUE_SIZE,
-                                              start, opening_next, POINTS_COL),
-                   panel_window=None if start == opening_next
-                   else (start - 1, opening_next))
+        lo, hi = window_for(start, opening_next, my_schedule,
+                            start == opening_next)
+        show_board(available, my_roster, lo, hi,
+                   on_clock=(start == opening_next))
         shown_for = opening_next if start == opening_next else None
 
     previous = None
@@ -449,14 +462,11 @@ def run_live(args):
                 # that pick, so the fallback it names is one that plausibly
                 # survives rather than a player already gone by then.
                 mine_next = next((p for p in my_schedule if p >= next_overall), None)
-                following = next((p for p in my_schedule if p > (mine_next or 0)), None)
                 if mine_next is not None:
-                    projected = vona_mod.project(available, HISTORY, LEAGUE_SIZE,
-                                                 next_overall, mine_next, POINTS_COL)
-                    show_board(available, my_roster, mine_next, following,
-                               on_clock=on_clock, projected=projected,
-                               panel_window=(next_overall - 1, mine_next)
-                               if not on_clock else None)
+                    start, end = window_for(next_overall, mine_next, my_schedule,
+                                            on_clock)
+                    show_board(available, my_roster, start, end,
+                               on_clock=on_clock)
                 if on_clock:
                     shown_for = next_overall
 
@@ -476,17 +486,17 @@ def indent(text: str) -> str:
     return "\n".join(INDENT + line for line in text.splitlines())
 
 
-def show_board(available, my_roster, current_pick, next_pick, on_clock=False,
-               projected=None, panel_window=None):
-    """Top-ten board, indented beneath the pick line.
+def show_board(available, my_roster, current_pick, next_pick, on_clock=False):
+    """Top-ten board and the top of each position, over one shared window.
 
-    VONA is always present rather than appearing only when it has something
-    to say — a column that comes and goes reads as a glitch, and a zero is
-    itself the signal that waiting is free at that position.
+    VONA answers a single question throughout: what does waiting until your
+    next opportunity cost. While others pick, that opportunity is your turn,
+    so the window runs from now until then. On the clock it is the pick after
+    this one. Both tables use that window and the live board, so a player's
+    number in the list is the same number the panel shows for his position.
     """
     sugg = suggest_top(available, my_roster, k=LEAGUE.suggestions,
-                       current_pick=current_pick, next_pick=next_pick,
-                       pool=projected)
+                       current_pick=current_pick, next_pick=next_pick)
     if sugg.empty:
         print(indent("no candidates left"))
         return
@@ -498,19 +508,12 @@ def show_board(available, my_roster, current_pick, next_pick, on_clock=False,
     view.index = range(1, len(view) + 1)
     print(indent(table_mod.render(view, index_name="#")))
 
-    if next_pick and next_pick > current_pick + 1:
-        # The panel always reads the real board. Its job is to say who is
-        # actually top of each position right now, not who a projection
-        # guesses will still be there — the projection belongs in the VONA
-        # column, which is explicitly about a future pick.
-        start, end = panel_window or (current_pick, next_pick)
-        panel = vona_mod.summary(available, HISTORY, LEAGUE_SIZE,
-                                 start, end, POINTS_COL)
-        if not panel.empty:
-            print()
-            label = "top available at every position"
-            print(indent(label))
-            print(indent(table_mod.render(panel)))
+    panel = vona_mod.summary(available, HISTORY, LEAGUE_SIZE,
+                             current_pick, next_pick, POINTS_COL)
+    if not panel.empty:
+        print()
+        print(indent("top available at every position"))
+        print(indent(table_mod.render(panel)))
     print()
 
 
