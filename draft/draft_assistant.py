@@ -7,6 +7,7 @@ import numpy as np
 
 from league import draft_history, league
 from draft import live as live_mod
+from draft import table as table_mod
 from draft import vona as vona_mod
 from players.names import normalize_name
 
@@ -343,6 +344,11 @@ def run_live(args):
         except Exception:
             my_team_id = None
     state0 = draft.state()
+    on_the_clock = {
+        p.get("overallPickNumber") or p.get("pick_no"):
+            state0["teams"].get(p.get("teamId") or p.get("roster_id"), "")
+        for p in state0["picks"]
+    }
     if my_team_id is not None:
         name = state0["teams"].get(my_team_id, f"team {my_team_id}")
         print(f"  You are: {name} (team {my_team_id})")
@@ -360,6 +366,7 @@ def run_live(args):
           f"Ctrl-C to stop.\n")
 
     shown_for = None
+    previous = None
     try:
         while True:
             state = draft.state()
@@ -370,14 +377,8 @@ def run_live(args):
                         else entry["overall"] in my_schedule)
                 available, my_roster, row = apply_pick(
                     available, my_roster, entry, mine)
-                marker = ">>> YOU" if mine else "        "
-                if row is not None:
-                    extra = f"  [{row[POINTS_COL]:.1f} pts, VOR {row['VOR']:.1f}]"
-                elif entry["position"] in {"K", "D/ST", "DEF"}:
-                    extra = "  [not projected — drafted by feel]"
-                else:
-                    extra = "  [not on board]"
-                print(f"{marker} {live_mod.format_pick(entry)}{extra}", flush=True)
+                previous = (f"{entry['player']} [{entry['position']}]"
+                            f"{'  <- YOU' if mine else ''}")
 
             if state["complete"]:
                 print("\ndraft complete")
@@ -399,6 +400,16 @@ def run_live(args):
             # otherwise rebuild it for every pick already made — and not at
             # all on polls that found nothing.
             if fresh or (on_clock and shown_for != next_overall):
+                # A pick is only visible once it has been made, so the header
+                # names the team now on the clock and the player who just went.
+                if previous:
+                    print(f"Previous Pick: {previous}")
+                rnd = (next_overall - 1) // LEAGUE_SIZE + 1
+                team = on_the_clock.get(next_overall, "")
+                tag = "  <<< YOU ARE ON THE CLOCK" if on_clock else ""
+                print(f"Pick #{next_overall} Round{rnd}"
+                      f"{' ' + team if team else ''}{tag}", flush=True)
+
                 upcoming = [p for p in my_schedule if p >= next_overall]
                 current = upcoming[0] if upcoming else None
                 following = upcoming[1] if len(upcoming) > 1 else None
@@ -407,8 +418,6 @@ def run_live(args):
                                on_clock=on_clock)
                 if on_clock:
                     shown_for = next_overall
-                    print(f"\n>>> YOU ARE ON THE CLOCK (pick {next_overall}) — "
-                          f"draft in {args.provider}; this will pick it up.\n")
 
             time.sleep(args.interval)
     except KeyboardInterrupt:
@@ -419,46 +428,41 @@ def run_live(args):
     return 0
 
 
-def show_board(available, my_roster, current_pick, next_pick, on_clock=False):
-    """The complete picture: suggestions, cost of waiting, RB/WR, your roster.
+INDENT = "    "
 
-    VONA is always anchored to *your* next pick rather than the pick that just
-    happened, so the numbers answer the same question all the way through:
-    what does waiting until my turn cost me.
+
+def indent(text: str) -> str:
+    return "\n".join(INDENT + line for line in text.splitlines())
+
+
+def show_board(available, my_roster, current_pick, next_pick, on_clock=False):
+    """Top-ten board, indented beneath the pick line.
+
+    VONA is always present rather than appearing only when it has something
+    to say — a column that comes and goes reads as a glitch, and a zero is
+    itself the signal that waiting is free at that position.
     """
     sugg = suggest_top(available, my_roster, k=LEAGUE.suggestions,
                        current_pick=current_pick, next_pick=next_pick)
     if sugg.empty:
-        print("No candidates to suggest.")
+        print(indent("no candidates left"))
         return
 
-    header = (f"--- ON THE CLOCK: your pick #{current_pick} ---" if on_clock
-              else f"--- board (your next pick: #{current_pick}) ---")
-    print(f"\n{header}")
     view = sugg[["Player", "Position", POINTS_COL, "VOR", "MarginalGain",
-                 "VONA"]].rename(columns={POINTS_COL: "AVG"})
-    print(view.to_string(index=True))
+                 "VONA"]].rename(columns={POINTS_COL: "AVG",
+                                          "MarginalGain": "Gain",
+                                          "Position": "Pos"})
+    view.index = range(1, len(view) + 1)
+    print(indent(table_mod.render(view, index_name="#")))
 
-    if next_pick:
-        gap = next_pick - current_pick - 1
-        if gap <= 0:
-            print(f"\nBack-to-back picks (#{current_pick} then #{next_pick}) — "
-                  f"nothing comes off the board between them, so waiting costs "
-                  f"nothing.")
-        else:
-            print(f"\nWaiting from #{current_pick} until #{next_pick} costs "
-                  f"({gap} picks between):")
-            print(vona_mod.summary(available, HISTORY, LEAGUE_SIZE, current_pick,
-                                   next_pick, POINTS_COL).to_string(index=False))
-
-    rbwr = suggest_top_by_positions(available, my_roster, {"RB", "WR"},
-                                    k=LEAGUE.suggestions)
-    if not rbwr.empty:
-        print("\nTop RB/WR:")
-        print(rbwr[["Player", "Position", POINTS_COL, "VOR", "MarginalGain"]]
-              .rename(columns={POINTS_COL: "AVG"}).to_string(index=True))
-
-    print(f"\n[{pretty_roster_summary(my_roster)}]")
+    if next_pick and next_pick > current_pick + 1:
+        panel = vona_mod.summary(available, HISTORY, LEAGUE_SIZE,
+                                 current_pick, next_pick, POINTS_COL)
+        if not panel.empty:
+            print()
+            print(indent(f"cost of waiting from #{current_pick} to #{next_pick}"))
+            print(indent(table_mod.render(panel)))
+    print()
 
 
 def print_final_roster(my_roster):

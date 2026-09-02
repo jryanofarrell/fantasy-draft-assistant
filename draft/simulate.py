@@ -68,20 +68,32 @@ class SimulatedDraft:
                 "playerId": overall, "player": row["Player"],
                 "position": row["Position"]}
 
+    def slot_owner(self, overall: int) -> int:
+        rnd = (overall - 1) // self.teams + 1
+        seat = (overall - 1) % self.teams
+        return self.order[seat if rnd % 2 == 1 else self.teams - 1 - seat]
+
     def state(self) -> dict:
         nxt = len(self.picks) + 1
         pick = self._choose(nxt)
         if pick:
             self.picks.append(pick)
+        # Expose every remaining slot so the header can name who is up next,
+        # matching ESPN, which pre-creates all of them.
+        rounds = 15
+        future = [{"overallPickNumber": n, "roundId": (n - 1)//self.teams + 1,
+                   "teamId": self.slot_owner(n), "playerId": -1}
+                  for n in range(len(self.picks) + 1, self.teams * rounds + 1)]
         return {"in_progress": True, "complete": pick is None,
-                "picks": list(self.picks), "teams": dict(self.team_names),
-                "teams_raw": []}
+                "picks": list(self.picks) + future,
+                "teams": dict(self.team_names), "teams_raw": []}
 
     def new_picks(self, state=None) -> list[dict]:
         state = state if state is not None else self.state()
         out = []
         for pick in state["picks"]:
-            if pick["overallPickNumber"] in self._seen:
+            # Unmade slots are placeholders for the header, not picks.
+            if "player" not in pick or pick["overallPickNumber"] in self._seen:
                 continue
             self._seen.add(pick["overallPickNumber"])
             out.append({
@@ -132,8 +144,9 @@ def main() -> int:
 
     def capped_state():
         if len(sim.picks) >= args.picks:
-            return {"in_progress": False, "complete": True, "picks": list(sim.picks),
-                    "teams": dict(names), "teams_raw": []}
+            return {"in_progress": False, "complete": True,
+                    "picks": list(sim.picks), "teams": dict(names),
+                    "teams_raw": []}
         return original_state()
 
     sim.state = capped_state
