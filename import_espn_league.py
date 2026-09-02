@@ -53,7 +53,7 @@ SLOT_MAP = {
 SCORING_MAP = {
     3:  ("passing", "yards_per_point", "rate"),
     4:  ("passing", "touchdown", "flat"),
-    95: ("passing", "interception", "flat"),
+    20: ("passing", "interception", "flat"),   # INTT — thrown by a QB
     19: ("passing", "two_point_conversion", "flat"),
     24: ("rushing", "yards_per_point", "rate"),
     25: ("rushing", "touchdown", "flat"),
@@ -70,6 +70,37 @@ SCORING_MAP = {
     63: ("misc", "fumble_recovered_td", "flat"),
     101: ("misc", "return_td", "flat"),
     102: ("misc", "return_td", "flat"),
+    # Kicking
+    80: ("kicking", "fg_0_39", "flat"),
+    77: ("kicking", "fg_40_49", "flat"),
+    198: ("kicking", "fg_50_59", "flat"),
+    201: ("kicking", "fg_60_plus", "flat"),
+    85: ("kicking", "fg_missed", "flat"),
+    86: ("kicking", "pat_made", "flat"),
+    88: ("kicking", "pat_missed", "flat"),
+    # Defense / special teams. Note 95 is a defensive interception, distinct
+    # from 20 (interceptions thrown), which is an offensive penalty.
+    95: ("defense", "interception", "flat"),
+    96: ("defense", "fumble_recovery", "flat"),
+    97: ("defense", "blocked_kick", "flat"),
+    98: ("defense", "safety", "flat"),
+    99: ("defense", "sack", "flat"),
+    103: ("defense", "interception_return_td", "flat"),
+    104: ("defense", "fumble_return_td", "flat"),
+    93: ("defense", "blocked_kick_return_td", "flat"),
+    206: ("defense", "two_point_return", "flat"),
+    209: ("defense", "one_point_safety", "flat"),
+}
+
+# Tiered categories: ESPN has one stat id per band. Value is the band label.
+POINTS_ALLOWED_TIERS = {
+    89: "0", 90: "1-6", 91: "7-13", 92: "14-17", 122: "18-27",
+    123: "28-34", 124: "35-45", 125: "46+",
+}
+YARDS_ALLOWED_TIERS = {
+    128: "<100", 129: "100-199", 130: "200-299", 131: "300-349",
+    132: "350-399", 133: "400-449", 134: "450-499", 135: "500-549",
+    136: "550+",
 }
 
 RECEPTION_TO_TYPE = {0.0: "standard", 0.5: "half_ppr", 1.0: "ppr"}
@@ -151,11 +182,23 @@ def map_settings(payload: dict, season: int) -> dict[str, Any]:
     bench = slots.pop("BE", 0)
     ir = slots.pop("IR", 0)
 
-    scoring: dict[str, dict[str, float]] = {}
+    scoring: dict[str, dict[str, Any]] = {}
     unknown_scoring = []
     for item in scoring_items:
         stat_id = item.get("statId")
         points = item.get("pointsOverrides", {}).get("16", item.get("points", 0))
+
+        if stat_id in POINTS_ALLOWED_TIERS:
+            scoring.setdefault("defense", {}).setdefault("points_allowed", {})[
+                POINTS_ALLOWED_TIERS[stat_id]
+            ] = points
+            continue
+        if stat_id in YARDS_ALLOWED_TIERS:
+            scoring.setdefault("defense", {}).setdefault("yards_allowed", {})[
+                YARDS_ALLOWED_TIERS[stat_id]
+            ] = points
+            continue
+
         target = SCORING_MAP.get(stat_id)
         if target is None:
             if points:

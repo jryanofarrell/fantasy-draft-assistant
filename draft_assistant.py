@@ -232,7 +232,7 @@ def main():
     available = ranked_overall.copy()
     my_roster = ranked_overall.iloc[0:0].copy()  # empty with same columns
 
-    print("\n=== Draft Assistant (Greedy + Flex-aware + Bench=5) ===")
+    print(f"\n=== Draft Assistant (Greedy + Flex-aware + Bench={BENCH_SLOTS}) ===")
     print(f"Autocomplete: {'ON' if HAVE_PT else 'OFF'}")
     print("Commands: 'auto' for other teams to auto-pick top VOR, 'quit' to exit.\n")
 

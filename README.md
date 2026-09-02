@@ -15,13 +15,17 @@ rather than the scripts.
 
 | Setting | Value |
 | --- | --- |
+| League | Le Ligue (ESPN 1280742) |
 | Season | 2026 |
 | League size | 12 teams |
-| Draft slot | 12 |
+| Draft slot | 4 |
 | Scoring | half PPR (0.5 pts/reception, converted on download) |
-| Starters | QB 1, RB 2, WR 2, TE 1, FLEX 2 |
+| Starters | QB 1, RB 2, WR 2, TE 1, FLEX 2, D/ST 1, K 1 |
 | Flex eligible | RB / WR / TE |
-| Bench | 5 |
+| Bench | 4 (+1 IR) |
+
+Settings were imported from ESPN and verified — `import_espn_league.py`
+currently reports no differences.
 
 Print the loaded config at any time:
 
@@ -33,12 +37,6 @@ The loader validates on load and refuses to run on a config that would
 silently produce a wrong draft board — a `scoring_type` that disagrees with
 the per-reception value, a draft slot outside the league, a FLEX slot with no
 eligible positions, and so on.
-
-> ⚠️ **Verify against ESPN before drafting.** Fields in `league.yaml` marked
-> `[carried over]` came from last season's hardcoded script; `[ESPN default]`
-> fields are guesses. In particular ESPN defaults to FLEX 1, a K and a D/ST
-> slot, and a 7-man bench — this config carries last year's FLEX 2, no K or
-> D/ST, and a 5-man bench.
 
 ### Importing from ESPN
 
@@ -83,11 +81,11 @@ them yourself.
 
 | Script | What it does |
 | --- | --- |
-| `download_projections.py` | Scrapes CBS PPR season projections for QB/RB/WR/TE into `data/<season>/<POS>-Table 1.csv`. Run this first each season. |
-| `chat_gpt_draft_assistant.py` | The main tool. Interactive snake-draft assistant — tracks every team's picks, recomputes suggestions each pick, prints your final starters + bench. |
-| `chat_gpt_fantasy_rankings.py` | Standalone flex-aware VOR rankings; writes `data/<season>/rankings_vor_flexaware.csv`. |
-| `combine_data_beersheets.py` | Merges the per-position sheets into `FULL-Table 1.csv`, adding an `AVG Differential` column (points above the average league starter at that position). |
-| `download_data_nfl_data.py` | Scratch script — dumps `nfl_data_py` seasonal data. |
+| `data_scripts/download_projections.py` | Scrapes CBS PPR season projections for QB/RB/WR/TE into `data/<season>/<POS>-Table 1.csv`. Run this first each season. |
+| `draft_assistant.py` | The main tool. Interactive snake-draft assistant — tracks every team's picks, recomputes suggestions each pick, prints your final starters + bench. |
+| `fantasy_rankings.py` | Standalone flex-aware VOR rankings; writes `data/<season>/rankings_vor_flexaware.csv`. |
+| `data_scripts/combine_data.py` | Merges the per-position sheets into `FULL-Table 1.csv`, adding an `AVG Differential` column (points above the average league starter at that position). |
+| `data_scripts/download_data_nfl_data.py` | Scratch script — dumps `nfl_data_py` seasonal data. |
 | `league.py` | Loads and validates `league.yaml`. Run directly to print the active league. |
 | `import_espn_league.py` | Pulls live settings from ESPN and diffs them against `league.yaml`. Reads `auth`. |
 | `config.py` | Bridges `league.yaml` to the scripts and resolves data paths. |
@@ -107,7 +105,7 @@ them yourself.
 Data lives under `data/<season>/` and is gitignored. Regenerate it with:
 
 ```bash
-python download_projections.py --season 2026
+python data_scripts/download_projections.py --season 2026
 ```
 
 That writes one sheet per position:
@@ -155,7 +153,7 @@ ECR workbook, which supplied a `LOW` / `AVG` / `HIGH` projection band plus
 extra reference tabs (RISK, SNAKE, Rookies, Scoring, ECR). Those exports are
 preserved under `data/2025/` locally but are not reproducible from code.
 
-From 2026 the sheets come from CBS via `download_projections.py`, which gives
+From 2026 the sheets come from CBS via `data_scripts/download_projections.py`, which gives
 a single point projection rather than a band. Nothing in the repo consumed
 `LOW`/`HIGH`, so ranking behaviour is unchanged — but the uncertainty
 information is gone, and there is no rookie or bye-week data.
@@ -165,7 +163,7 @@ information is gone, and there is no rookie or bye-week data.
 ```bash
 python -m venv .venv && source .venv/bin/activate
 pip install -r requirements.txt
-python download_projections.py --season 2026
+python data_scripts/download_projections.py --season 2026
 ```
 
 `prompt_toolkit` is optional — install it for fuzzy player-name autocomplete
@@ -175,7 +173,7 @@ must type names exactly as `Name (POS)`.
 ## Running a draft
 
 ```bash
-python chat_gpt_draft_assistant.py
+python draft_assistant.py
 ```
 
 At each pick:

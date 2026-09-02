@@ -6,6 +6,12 @@ converted to the league's reception scoring (see `league.yaml`).
 
     python download_projections.py --season 2026
 """
+import sys
+from pathlib import Path
+
+# This script lives in data_scripts/; the shared config sits at the repo root.
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+
 import argparse
 import io
 import re

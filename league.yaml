@@ -1,57 +1,54 @@
 # ─────────────────────────────────────────────────────────────────────────────
 # League configuration
 #
-# Mirrors the settings you can change in ESPN (League Settings → Basic /
-# Roster / Scoring). Edit this file rather than touching the scripts.
-#
-# ⚠️  VERIFY THE MARKED FIELDS against your actual ESPN league before drafting.
-#     Values marked [carried over] came from last season's hardcoded script.
-#     Values marked [ESPN default] are ESPN's defaults and are a guess.
+# Imported from ESPN league 1280742 on 2026-09-02 via import_espn_league.py.
+# Mirrors ESPN's League Settings (Basic / Roster / Scoring). Edit this file
+# rather than touching the scripts; re-run the importer to check for drift.
 # ─────────────────────────────────────────────────────────────────────────────
 
 league:
-  name: ""                  # optional, cosmetic
+  name: "Le Ligue"
   platform: espn
+  espn_league_id: 1280742
   season: 2026
-  size: 12                  # [carried over] number of teams
+  size: 12
   scoring_type: half_ppr    # standard | half_ppr | ppr — see scoring.receiving.reception
 
 draft:
-  type: snake               # snake | auction  (only snake is implemented)
-  my_slot: 12               # [carried over] your pick position, 1..league.size
+  type: snake
+  my_slot: 4                # confirmed from ESPN pickOrder (team 8)
   reversal_round: null      # ESPN "3rd round reversal"; null = off
 
 # ─────────────────────────────────────────────────────────────────────────────
-# Roster — ESPN "Roster Settings" lineup slot counts.
-# Set a slot to 0 if your league doesn't use it.
+# Roster — ESPN lineup slot counts.
 # ─────────────────────────────────────────────────────────────────────────────
 roster:
   lineup_slots:
-    QB: 1                   # [carried over]
-    RB: 2                   # [carried over]
-    WR: 2                   # [carried over]
-    TE: 1                   # [carried over]
-    FLEX: 2                 # [carried over] ⚠️ ESPN default is 1
-    OP: 0                   # superflex / offensive player (QB-eligible flex)
-    D/ST: 0                 # ⚠️ ESPN default is 1
-    K: 0                    # ⚠️ ESPN default is 1
+    QB: 1
+    RB: 2
+    WR: 2
+    TE: 1
+    FLEX: 2
+    OP: 0                   # superflex; not used in this league
+    D/ST: 1
+    K: 1
   flex_eligible: [RB, WR, TE]
   op_eligible: [QB, RB, WR, TE]
-  bench: 5                  # [carried over] ⚠️ ESPN default is 7
-  ir: 0                     # injured reserve slots; not drafted
+  bench: 4
+  ir: 1                     # not drafted
 
 # ─────────────────────────────────────────────────────────────────────────────
-# Scoring — ESPN "Scoring Settings". Points per unit unless noted.
-# Only the offensive categories feed the draft assistant today; kicking and
-# defense are recorded here so the file is a complete picture of the league.
+# Scoring — every active rule ESPN reports for this league.
+# Only the offensive categories feed the draft assistant; kicking and defense
+# are recorded so the file is a complete picture of the league.
 # ─────────────────────────────────────────────────────────────────────────────
 scoring:
   passing:
-    yards_per_point: 25     # ESPN expresses this as 1 pt per N yards
+    yards_per_point: 25     # ESPN stores 0.04 pts/yd
     touchdown: 4
-    interception: -2
+    interception: -2        # thrown
     two_point_conversion: 2
-    bonus_300_yd: 0         # [ESPN default] off
+    bonus_300_yd: 0
     bonus_400_yd: 0
 
   rushing:
@@ -62,7 +59,7 @@ scoring:
     bonus_200_yd: 0
 
   receiving:
-    reception: 0.5          # ⚠️ 0 = standard, 0.5 = half PPR, 1 = full PPR
+    reception: 0.5          # half PPR
     yards_per_point: 10
     touchdown: 6
     two_point_conversion: 2
@@ -72,37 +69,52 @@ scoring:
   misc:
     fumble_lost: -2
     fumble_recovered_td: 6
-    return_td: 6
+    return_td: 6            # kickoff and punt return TDs
 
-  kicking:                  # [ESPN default] unused while roster.lineup_slots.K is 0
+  kicking:
     pat_made: 1
     pat_missed: -1
     fg_0_39: 3
     fg_40_49: 4
-    fg_50_plus: 5
+    fg_50_59: 5
+    fg_60_plus: 5
     fg_missed: -1
 
-  defense:                  # [ESPN default] unused while roster.lineup_slots["D/ST"] is 0
+  defense:
     sack: 1
     interception: 2
     fumble_recovery: 2
     safety: 2
-    touchdown: 6
+    one_point_safety: 1
     blocked_kick: 2
-    points_allowed:         # upper bound of each tier -> points
-      0: 5
-      6: 4
-      13: 3
-      17: 1
-      27: 0
-      34: -1
-      45: -3
-      99: -5
+    interception_return_td: 6
+    fumble_return_td: 6
+    blocked_kick_return_td: 6
+    two_point_return: 2
+    points_allowed:         # band -> points
+      "0": 5
+      "1-6": 4
+      "7-13": 3
+      "14-17": 1
+      "18-27": 0
+      "28-34": -1
+      "35-45": -3
+      "46+": -5
+    yards_allowed:          # active in this league; not an ESPN default
+      "<100": 5
+      "100-199": 3
+      "200-299": 2
+      "300-349": 0
+      "350-399": -1
+      "400-449": -3
+      "450-499": -5
+      "500-549": -6
+      "550+": -7
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Draft assistant behaviour (not an ESPN setting)
 # ─────────────────────────────────────────────────────────────────────────────
 tool:
-  positions: [QB, RB, WR, TE]   # positions the assistant ranks and suggests
+  positions: [QB, RB, WR, TE]   # K and D/ST have no projections; draft them yourself
   points_column: AVG            # column in the projection sheets to rank on
   suggestions: 10               # rows shown per pick
