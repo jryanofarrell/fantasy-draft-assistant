@@ -1,0 +1,6 @@
+pandas
+numpy
+requests
+requests-cache
+lxml
+nfl_data_py

@@ -1,0 +1,13 @@
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+
+# macOS
+.DS_Store
+
+# Data — not committed (see README for expected layout)
+DraftSheets Fantasy Tool/
+*.csv
+*.sqlite
