@@ -27,6 +27,13 @@ ESPN_POSITIONS = {1: "QB", 2: "RB", 3: "WR", 4: "TE", 5: "K", 16: "D/ST"}
 SLEEPER_DRAFT = "https://api.sleeper.app/v1/draft/{draft_id}"
 
 
+def format_pick(pick: dict) -> str:
+    """One line per pick: overall, round, team, player, position."""
+    return (f"#{pick['overall']:<3} R{pick['round']:<2} "
+            f"{str(pick['team'])[:18]:<18} "
+            f"{pick['player']} ({pick['position']})")
+
+
 class DraftClosed(RuntimeError):
     """The draft finished, or the provider stopped returning picks."""
 
@@ -48,10 +55,14 @@ class EspnDraft:
         self._names: dict[int, tuple[str, str]] = {}
         self._seen: set[int] = set()
 
+    def prefetch(self) -> None:
+        """Warm the player index so the first pick doesn't stall on a lookup."""
+        self._resolve([-1])
+
     def _resolve(self, player_ids: list[int]) -> None:
         """Look up any player ids we haven't named yet."""
         missing = [p for p in player_ids if p not in self._names and p > 0]
-        if not missing:
+        if not missing and self._names:
             return
         resp = requests.get(
             f"{espn_api.BASE}/seasons/{self.season}/players",
@@ -86,9 +97,13 @@ class EspnDraft:
                       for t in payload.get("teams", [])},
         }
 
-    def new_picks(self) -> list[dict]:
-        """Picks made since the last call, oldest first."""
-        state = self.state()
+    def new_picks(self, state: dict | None = None) -> list[dict]:
+        """Picks made since the last call, oldest first.
+
+        Accepts an already-fetched state so a polling loop can check for new
+        picks and for completion without paying for two requests.
+        """
+        state = state if state is not None else self.state()
         made = [p for p in state["picks"] if p.get("playerId", -1) > 0]
         fresh = [p for p in made if p["overallPickNumber"] not in self._seen]
         if not fresh:
@@ -133,8 +148,8 @@ class SleeperDraft:
             "teams": {},
         }
 
-    def new_picks(self) -> list[dict]:
-        state = self.state()
+    def new_picks(self, state: dict | None = None) -> list[dict]:
+        state = state if state is not None else self.state()
         fresh = [p for p in state["picks"] if p.get("pick_no") not in self._seen]
         out = []
         for pick in sorted(fresh, key=lambda p: p.get("pick_no", 0)):
@@ -185,19 +200,21 @@ def main() -> int:
     print(f"{args.provider}: in_progress={state['in_progress']} "
           f"complete={state['complete']} picks_made={made}")
     if args.once:
-        for pick in draft.new_picks():
-            print(f"  #{pick['overall']:<3} R{pick['round']:<2} "
-                  f"{str(pick['team'])[:18]:<18} {pick['player']} ({pick['position']})")
+        for pick in draft.new_picks(state):
+            print("  " + format_pick(pick))
         return 0
+
+    if isinstance(draft, EspnDraft):
+        draft.prefetch()
 
     print(f"polling every {args.interval}s — Ctrl-C to stop\n")
     try:
         while True:
-            for pick in draft.new_picks():
-                print(f"#{pick['overall']:<3} R{pick['round']:<2} "
-                      f"{str(pick['team'])[:18]:<18} "
-                      f"{pick['player']} ({pick['position']})", flush=True)
-            if draft.state()["complete"]:
+            # One request per cycle: the same state answers both questions.
+            state = draft.state()
+            for pick in draft.new_picks(state):
+                print(format_pick(pick), flush=True)
+            if state["complete"]:
                 print("\ndraft complete")
                 return 0
             time.sleep(args.interval)
