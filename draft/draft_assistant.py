@@ -214,23 +214,6 @@ def score_candidates(pre: pd.DataFrame, my_roster: pd.DataFrame) -> list[float]:
         pd.concat([skeleton, my_roster], ignore_index=True))
     return [marginal_gain(my_roster, r, before) for _, r in pre.iterrows()]
 
-def suggest_top_by_positions(available: pd.DataFrame, my_roster: pd.DataFrame,
-                             positions: set[str], k: int = 10) -> pd.DataFrame:
-    cand = available[available["Position"].isin(positions)].copy()
-    # keep calculations safe
-    for col in [POINTS_COL, "VOR"]:
-        cand[col] = pd.to_numeric(cand[col], errors="coerce")
-    cand = cand.dropna(subset=[POINTS_COL, "VOR"])
-
-    # prefilter for speed
-    pre = cand.nlargest(min(len(cand), CANDIDATE_POOL), ["VOR", POINTS_COL]).copy()
-    pre["MarginalGain"] = score_candidates(pre, my_roster)
-
-    pre = pre.sort_values(["MarginalGain", "VOR", POINTS_COL],
-                          ascending=[False, False, False])
-    return pre.head(k)[["Player", "Position", POINTS_COL, "VOR", "MarginalGain", "Key"]].reset_index(drop=True)
-
-
 def suggest_top(available: pd.DataFrame, my_roster: pd.DataFrame, k: int = 10,
                 current_pick: int | None = None,
                 next_pick: int | None = None,
@@ -252,12 +235,15 @@ def suggest_top(available: pd.DataFrame, my_roster: pd.DataFrame, k: int = 10,
     else:
         pre["VONA"] = 0.0
 
-    # Marginal gain orders the board. VONA is a *positional* measure — best
-    # RB now versus best RB later — so per player it is negative for anyone
-    # who isn't the best at his position, and sorting on it would bury every
-    # second-best player behind the top man at each spot. It rides along as
-    # information, and the per-position panel is where it does its work.
-    pre = pre.sort_values(["MarginalGain", "VOR", POINTS_COL], ascending=False)
+    # Marginal gain leads, because a player who improves your starting lineup
+    # is worth more than one who only improves the bench. But it measures the
+    # starting lineup *only*, so once your slots are full it goes flat — and
+    # arrives as floating-point dust rather than a clean zero, which meant
+    # near-ties never actually tied and the order fell through to raw value.
+    # Rounding collapses that dust so VONA breaks the tie, which is precisely
+    # the phase where positional scarcity is the whole decision.
+    pre["MarginalGain"] = pre["MarginalGain"].round(2) + 0.0
+    pre = pre.sort_values(["MarginalGain", "VONA", "VOR"], ascending=False)
     return pre.head(k)[["Player", "Position", POINTS_COL, "VOR", "MarginalGain",
                         "VONA", "Key"]].reset_index(drop=True)
 
@@ -401,9 +387,20 @@ def run_live(args):
     previous = None
     batch: list[str] = []
     shown_for = None
+    failures = 0
     try:
         while True:
-            state = draft.state()
+            try:
+                state = draft.state()
+            except Exception as exc:
+                # Two hours of polling will meet a blip; losing the session to
+                # it means losing every suggestion until someone notices.
+                failures += 1
+                print(f"[poll failed ({failures}): {exc}] retrying in "
+                      f"{args.interval}s", flush=True)
+                time.sleep(args.interval)
+                continue
+            failures = 0
             fresh = draft.new_picks(state)
             batch = []
             for entry in fresh:
@@ -513,6 +510,7 @@ def show_board(available, my_roster, current_pick, next_pick, on_clock=False):
         print()
         print(indent("top available at every position"))
         print(indent(table_mod.render(panel)))
+    print(indent(f"[{pretty_roster_summary(my_roster)}]"))
     print()
 
 
