@@ -100,6 +100,10 @@ Everything runs through `run.py`, which puts the repo root on `sys.path` so
 modules can use absolute imports (`from league.config import ...`) without
 path shims. Running the scripts directly will not work.
 
+`run.py` re-execs itself under `.venv` if started outside it, so `./run.py`
+works without activating anything. Set `FFDRAFT_NO_REEXEC=1` to suppress
+that and use whatever interpreter you invoked it with.
+
 ## Commands
 
 | Command | What it does |

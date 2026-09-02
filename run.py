@@ -12,8 +12,33 @@ Running from the repo root puts it on sys.path, so every module can use
 absolute imports (`from league.config import ...`) with no path shims.
 Arguments after the command are passed straight through.
 """
+import os
 import runpy
 import sys
+from pathlib import Path
+
+VENV_DIR = Path(__file__).resolve().parent / ".venv"
+VENV_PYTHON = VENV_DIR / "bin" / "python"
+
+
+def reexec_in_venv() -> None:
+    """Re-run under the repo virtualenv if we were started outside it.
+
+    The shebang resolves to whatever python3 is on PATH, which generally
+    lacks this repo's dependencies. Re-execing means `./run.py` works
+    without anyone having to remember to activate anything.
+    """
+    if os.environ.get("FFDRAFT_NO_REEXEC"):
+        return
+    if not VENV_PYTHON.exists():
+        return
+    # Compare sys.prefix, not the interpreter path: .venv/bin/python is a
+    # symlink to the system binary, so resolving it makes the two look equal.
+    if Path(sys.prefix) == VENV_DIR:
+        return
+    os.environ["FFDRAFT_NO_REEXEC"] = "1"
+    os.execv(str(VENV_PYTHON), [str(VENV_PYTHON), str(Path(__file__).resolve()), *sys.argv[1:]])
+
 
 COMMANDS = {
     "draft": ("draft.draft_assistant", "Interactive snake-draft assistant"),
@@ -36,6 +61,8 @@ def usage() -> None:
 
 
 def main() -> int:
+    reexec_in_venv()
+
     if len(sys.argv) < 2 or sys.argv[1] in {"-h", "--help", "help"}:
         usage()
         return 0
