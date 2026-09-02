@@ -5,11 +5,11 @@ A local, terminal-driven fantasy football draft assistant. It ranks players by
 you pick-by-pick through a snake draft, suggesting the player who adds the most
 to your projected starting lineup.
 
-Used for the 2025 draft.
+Used for the 2025 draft; refreshed with CBS projections for 2026.
 
 ## League settings
 
-Configured at the top of `chat_gpt_draft_assistant.py`:
+Configured in `config.py`:
 
 | Setting | Value |
 | --- | --- |
@@ -19,16 +19,18 @@ Configured at the top of `chat_gpt_draft_assistant.py`:
 | Flex eligible | RB / WR / TE |
 | Bench | 5 |
 | Projection column | `AVG` |
+| Season | 2026 |
 
 ## Scripts
 
 | Script | What it does |
 | --- | --- |
+| `download_projections.py` | Scrapes CBS PPR season projections for QB/RB/WR/TE into `data/<season>/<POS>-Table 1.csv`. Run this first each season. |
 | `chat_gpt_draft_assistant.py` | The main tool. Interactive snake-draft assistant — tracks every team's picks, recomputes suggestions each pick, prints your final starters + bench. |
-| `chat_gpt_fantasy_rankings.py` | Standalone flex-aware VOR rankings; writes `DraftSheets Fantasy Tool/rankings_vor_flexaware.csv`. |
+| `chat_gpt_fantasy_rankings.py` | Standalone flex-aware VOR rankings; writes `data/<season>/rankings_vor_flexaware.csv`. |
 | `combine_data_beersheets.py` | Merges the per-position sheets into `FULL-Table 1.csv`, adding an `AVG Differential` column (points above the average league starter at that position). |
-| `download_data_scraper.py` | Scrapes CBS PPR season projections into `cbs_stats.csv` (uses `requests_cache`). |
 | `download_data_nfl_data.py` | Scratch script — dumps `nfl_data_py` seasonal data. |
+| `config.py` | Season, league settings, and data paths shared by all of the above. |
 
 ### How the assistant ranks
 
@@ -42,31 +44,44 @@ Configured at the top of `chat_gpt_draft_assistant.py`:
 
 ## Data (not committed)
 
-Data files are gitignored. To run, recreate this layout in the repo root:
+Data lives under `data/<season>/` and is gitignored. Regenerate it with:
+
+```bash
+python download_projections.py --season 2026
+```
+
+That writes one sheet per position:
 
 ```
-DraftSheets Fantasy Tool/
+data/2026/
   QB-Table 1.csv
   RB-Table 1.csv
   WR-Table 1.csv
   TE-Table 1.csv
-  ...
 ```
 
-Each per-position CSV needs at minimum a `Player` column and an `AVG` column
-(projected points). These were manual exports from a BeerSheets / FantasyPros
-ECR spreadsheet — **no script in this repo regenerates them**; only
-`cbs_stats.csv` is scraped. Drop in fresh sheets each season.
+Each sheet carries `Player`, `Team`, `Position`, `AVG` (CBS projected season
+PPR points) and the underlying stat columns. `AVG` is what every downstream
+script ranks on.
 
-The other CSVs in that folder (ECR, RISK, SNAKE, Rookies, Scoring, AUC,
-Aggregate, FLEX EST) were reference tabs from the same workbook and are not
-read by these scripts.
+### Source note
+
+Through 2025 the sheets were manual exports from a BeerSheets / FantasyPros
+ECR workbook, which supplied a `LOW` / `AVG` / `HIGH` projection band plus
+extra reference tabs (RISK, SNAKE, Rookies, Scoring, ECR). Those exports are
+preserved under `data/2025/` locally but are not reproducible from code.
+
+From 2026 the sheets come from CBS via `download_projections.py`, which gives
+a single point projection rather than a band. Nothing in the repo consumed
+`LOW`/`HIGH`, so ranking behaviour is unchanged — but the uncertainty
+information is gone, and there is no rookie or bye-week data.
 
 ## Setup
 
 ```bash
 python -m venv .venv && source .venv/bin/activate
 pip install -r requirements.txt
+python download_projections.py --season 2026
 ```
 
 `prompt_toolkit` is optional — install it for fuzzy player-name autocomplete

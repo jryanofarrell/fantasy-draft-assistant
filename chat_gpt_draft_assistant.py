@@ -1,25 +1,23 @@
 # draft_assistant.py
 import pandas as pd
 import numpy as np
-from pathlib import Path
 
-# ===== League & lineup =====
-LEAGUE_SIZE = 12          # change if your league isn't 12 teams
-MY_SLOT = 12              # your draft position (1..LEAGUE_SIZE)
-ROSTER_SLOTS = {"QB": 1, "RB": 2, "WR": 2, "TE": 1, "FLEX": 2}
-FLEX_ELIGIBLE = {"RB", "WR", "TE"}
-BENCH_SLOTS = 5
-POINTS_COL = "AVG"
-POSITIONS = ["QB", "RB", "WR", "TE"]
-
-# ===== Files =====
-BASE = Path("./DraftSheets Fantasy Tool")
-FILE_TEMPLATE = "{pos}-Table 1.csv"
+from config import (
+    BENCH_SLOTS,
+    FLEX_ELIGIBLE,
+    LEAGUE_SIZE,
+    MY_SLOT,
+    POINTS_COL,
+    POSITIONS,
+    ROSTER_SLOTS,
+    SEASON,
+    position_file,
+)
 
 # ===== Load & clean =====
 dfs = {}
 for pos in POSITIONS:
-    fp = BASE / FILE_TEMPLATE.format(pos=pos)
+    fp = position_file(pos, SEASON)
     df = pd.read_csv(fp, na_values=["NaN", "nan", "", " ", "Â", "Â\xa0"], keep_default_na=True)
     df = df.dropna(subset=["Player"]).copy()
     df["Player"] = df["Player"].astype(str).str.strip()

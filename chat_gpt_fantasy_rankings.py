@@ -1,20 +1,20 @@
 import pandas as pd
 import numpy as np
-from pathlib import Path
 
-# ===== League & lineup =====
-LEAGUE_SIZE = 12
-ROSTER_SLOTS = {"QB": 1, "RB": 2, "WR": 2, "TE": 1, "FLEX": 2}
-FLEX_ELIGIBLE = {"RB", "WR", "TE"}
-
-# ===== Files =====
-BASE = Path("./DraftSheets Fantasy Tool")
-POSITIONS = ["QB", "RB", "WR", "TE"]
+from config import (
+    FLEX_ELIGIBLE,
+    LEAGUE_SIZE,
+    POSITIONS,
+    ROSTER_SLOTS,
+    SEASON,
+    data_dir,
+    position_file,
+)
 
 # ===== Load & clean =====
 dfs = {}
 for pos in POSITIONS:
-    fp = BASE / f"{pos}-Table 1.csv"
+    fp = position_file(pos, SEASON)
     df = pd.read_csv(fp, na_values=["NaN", "nan", "", " ", "Â", "Â\xa0"], keep_default_na=True)
     df = df.dropna(subset=["Player"]).copy()
     df["Player"] = df["Player"].astype(str).str.strip()
@@ -84,7 +84,7 @@ ranked_overall["PosRank"] = ranked_overall.groupby("Position")["VOR"] \
     .rank(method="first", ascending=False).astype(int)
 
 # Save + show summary
-out_path = BASE / "rankings_vor_flexaware.csv"
+out_path = data_dir(SEASON) / "rankings_vor_flexaware.csv"
 ranked_overall.to_csv(out_path, index=False)
 
 print("Replacement lines (after allocating FLEX):")
