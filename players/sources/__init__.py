@@ -1,13 +1,21 @@
 """Projection sources.
 
-Each module exposes `fetch(season) -> dict[scoring, DataFrame]`, where every
-frame carries at least Player / Team / Position / AVG. A source only appears
-under the scoring formats it can actually produce.
+Point-projection sources expose `fetch(season) -> dict[scoring, DataFrame]`,
+where every frame carries at least Player / Team / Position / AVG. A source
+only appears under the scoring formats it can actually produce.
+
+FantasyPros is kept separate: it publishes rankings rather than projections,
+so it enriches the finished board instead of being averaged into it.
 """
-from players.sources import cbs, espn, sleeper
+from players.sources import cbs, espn, fantasypros, manual, sleeper
 
 SOURCES = {
     "cbs": cbs,
     "sleeper": sleeper,
     "espn": espn,
+    "manual": manual,
+}
+
+ENRICHERS = {
+    "fantasypros": fantasypros,
 }

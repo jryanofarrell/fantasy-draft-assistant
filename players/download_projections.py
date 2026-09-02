@@ -18,7 +18,7 @@ import pandas as pd
 
 from config import POSITIONS, SCORING, SCORING_FORMATS, SEASON, position_file, scoring_dir
 from players import consensus
-from players.sources import SOURCES
+from players.sources import ENRICHERS, SOURCES
 
 
 def write_frame(df: pd.DataFrame, path) -> None:
@@ -26,7 +26,8 @@ def write_frame(df: pd.DataFrame, path) -> None:
     df.to_csv(path, index=False)
 
 
-def run(season: int, scorings: list[str], sources: list[str], min_sources: int) -> int:
+def run(season: int, scorings: list[str], sources: list[str],
+        min_sources: int, enrich: bool = True) -> int:
     fetched: dict[str, dict[str, pd.DataFrame]] = {}
     for name in sources:
         module = SOURCES[name]
@@ -61,6 +62,19 @@ def run(season: int, scorings: list[str], sources: list[str], min_sources: int) 
                     write_frame(subset, position_file(pos, season, scoring, source=name))
 
         board = consensus.build(by_source, min_sources=min_sources)
+
+        if enrich:
+            for name, module in ENRICHERS.items():
+                try:
+                    ranks = module.fetch_ranks(scoring)
+                except Exception as exc:
+                    print(f"  {name}: FAILED — {exc}", file=sys.stderr)
+                    continue
+                if ranks.empty:
+                    continue
+                board = consensus.enrich(board, ranks)
+                matched = int(board["ecr"].notna().sum()) if "ecr" in board else 0
+                print(f"  {name}: ranks for {matched} of {len(board)} players")
         print(f"\n{scoring}  ({', '.join(sorted(by_source))})")
         for pos in POSITIONS:
             subset = board[board["Position"] == pos].reset_index(drop=True)
@@ -84,6 +98,8 @@ def main() -> int:
                     help=f"comma-separated subset of: {', '.join(SOURCES)}")
     ap.add_argument("--min-sources", type=int, default=1,
                     help="drop players backed by fewer than this many sources")
+    ap.add_argument("--no-enrich", action="store_true",
+                    help="skip FantasyPros ECR rank/tier/bye enrichment")
     args = ap.parse_args()
 
     requested = [s.strip() for s in args.sources.split(",") if s.strip()]
@@ -96,7 +112,8 @@ def main() -> int:
     scorings = list(SCORING_FORMATS) if args.all_scorings else [args.scoring]
     print(f"season {args.season} | scoring: {', '.join(scorings)}\n"
           f"fetching {len(requested)} source(s)")
-    return run(args.season, scorings, requested, args.min_sources)
+    return run(args.season, scorings, requested, args.min_sources,
+               enrich=not args.no_enrich)
 
 
 if __name__ == "__main__":

@@ -157,6 +157,43 @@ default, or `--all-scorings` for all three.
 | `cbs` | none | ~100/pos | all three | Full stat lines. Only PPR and non-PPR pages exist, and they disagree by more than receptions, so PPR is treated as truth and the others derived from it. |
 | `sleeper` | none | ~550 | all three | The only source publishing every format natively. Carries injury status. |
 | `espn` | `auth` | ~400 | league only | Scored server-side under your league's exact rules, so it needs no conversion — and for the same reason exists only for the format you play. |
+| `manual` | — | whatever you drop in | any | Read from `sources/manual/`. See below. |
+
+Pick a subset with `--sources cbs,sleeper`.
+
+### FantasyPros (rankings, not projections)
+
+FantasyPros gates its projections — the public page returns ten players and
+no pagination parameter changes that. Its *rankings* are fully available, so
+they are used as **enrichment** rather than averaged in: a rank cannot be
+combined with points, and manufacturing points from a rank would be inventing
+data.
+
+Each consensus row therefore gains `ecr`, `tier`, `pos_rank`, `bye`,
+`ecr_stdev` and `pct_rostered`, drawn from ~110 experts. Tiers are the
+genuinely additive part — they mark where the drop-offs are, which a points
+board only implies. Bye weeks aren't available from any other source here.
+
+Skip it with `--no-enrich`.
+
+### BeerSheets and other manual sources
+
+BeerSheets has no machine-readable feed. The old `beersheets.com` is a parked
+domain; it now lives at Subvertadown as *Hold-My-BeerSheets*, generated per
+league from a form with no API, CSV, or JSON behind it. Scraping it would
+mean driving a form and parsing a print layout — fragile, and it would break
+the first time they restyle the page.
+
+Instead, drop a CSV in and it joins like any other source:
+
+```
+data/<season>/<scoring>/sources/manual/RB-Table 1.csv
+```
+
+Only a name, a position and a points column are required. The points column
+may be `AVG`, `FPTS`, `PTS`, `POINTS` or `PROJ`, in any capitalisation, so
+most exports work unedited. Position falls back to the filename when the
+sheet omits it.
 
 ### Consensus
 
@@ -173,8 +210,18 @@ Names are normalised before merging — accents, punctuation, case and
 generational suffixes are stripped, and team abbreviations are canonicalised
 (JAC/JAX, WAS/WSH). Spellings that still disagree, like "Chris" versus
 "Christopher", are reconciled on a looser key of first initial + last name +
-position + team. As of the last run, every one of the top 150 players matched
-across all three sources.
+position + team.
+
+That looser key is not safe on its own: Bijan Robinson and Brian Robinson Jr.
+are different Atlanta running backs who share all four. Two guards prevent
+that merge — first names must share a three-character prefix, and a fold is
+rejected if it would place the same source in a group twice, since no source
+lists one player under two spellings. The second guard is also asserted at
+build time, so a bad merge fails loudly rather than silently corrupting the
+board.
+
+As of the last run, every one of the top 150 players matched across all three
+sources.
 
 ### Scoring conversion
 
