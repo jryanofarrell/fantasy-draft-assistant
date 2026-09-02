@@ -87,12 +87,15 @@ league/                what the league's rules are
   league.py              loads and validates them
   import_espn_league.py  pulls live settings from ESPN
 players/               getting player projections
-  download_projections.py  scrape CBS
+  sources/               one adapter per provider (cbs, sleeper, espn)
+  names.py               name/team normalisation for cross-source matching
+  consensus.py           merges sources into one board
+  download_projections.py  orchestrates fetch -> per-source -> consensus
   combine_data.py          merge sheets into FULL-Table
 draft/                 drafting tools
   draft_assistant.py     interactive snake-draft assistant
   fantasy_rankings.py    standalone VOR rankings
-data/<season>/         the projection sheets (gitignored)
+data/<season>/<scoring>/   projection sheets (gitignored)
 auth                   ESPN credentials (gitignored)
 ```
 
@@ -129,61 +132,62 @@ Run `./run.py` with no arguments for the command list.
 
 ## Data (not committed)
 
-Data lives under `data/<season>/` and is gitignored. Regenerate it with:
-
-```bash
-./run.py projections --season 2026
-```
-
-That writes one sheet per position:
+Data is gitignored and organised by season and scoring format:
 
 ```
 data/2026/
-  QB-Table 1.csv
-  RB-Table 1.csv
-  WR-Table 1.csv
-  TE-Table 1.csv
+  half_ppr/
+    QB-Table 1.csv          <- consensus; the draft tools read this
+    RB-Table 1.csv  ...
+    sources/
+      cbs/QB-Table 1.csv    <- each source as downloaded
+      sleeper/QB-Table 1.csv
+      espn/QB-Table 1.csv
+  ppr/        ...same shape
+  standard/   ...same shape
 ```
 
-Each sheet carries `Player`, `Team`, `Position`, `AVG` (CBS projected season
-PPR points) and the underlying stat columns. `AVG` is what every downstream
-script ranks on.
+Rebuild with `./run.py projections`, which writes the league's format by
+default, or `--all-scorings` for all three.
+
+### Sources
+
+| Source | Auth | Depth | Formats | Notes |
+| --- | --- | --- | --- | --- |
+| `cbs` | none | ~100/pos | all three | Full stat lines. Only PPR and non-PPR pages exist, and they disagree by more than receptions, so PPR is treated as truth and the others derived from it. |
+| `sleeper` | none | ~550 | all three | The only source publishing every format natively. Carries injury status. |
+| `espn` | `auth` | ~400 | league only | Scored server-side under your league's exact rules, so it needs no conversion — and for the same reason exists only for the format you play. |
+
+### Consensus
+
+Sources disagree substantially — often 15% on the same player, and far more
+on backup quarterbacks where playing time is contested. The board takes the
+**median** across sources rather than the mean, so one stale injury
+assumption can't drag a player tens of points.
+
+Every row records `sources` (how many contributed) and `spread` (max minus
+min), plus each source's own number in an `AVG_<source>` column. A projection
+resting on a single opinion is visible rather than implied.
+
+Names are normalised before merging — accents, punctuation, case and
+generational suffixes are stripped, and team abbreviations are canonicalised
+(JAC/JAX, WAS/WSH). Spellings that still disagree, like "Chris" versus
+"Christopher", are reconciled on a looser key of first initial + last name +
+position + team. As of the last run, every one of the top 150 players matched
+across all three sources.
 
 ### Scoring conversion
 
-CBS publishes `ppr` and `nonppr` pages but no half-PPR, so `AVG` is converted
-on download to the league's per-reception value from `league.yaml`:
+Where a source doesn't publish a format natively, it is derived by adjusting
+the reception term only:
 
 ```
-AVG = CBS_PPR_points − (1.0 − reception_points) × receptions
+points = PPR_points − (1.0 − reception_points) × receptions
 ```
 
-Only the reception term differs between scoring formats, so this adjusts that
-one term and leaves the rest of CBS's projection alone — rather than
-recomputing points from the stat line, which would have to reproduce their
-bonuses and rounding exactly. Each sheet keeps the unmodified CBS number in a
-`PPR` column next to the converted `AVG`, so the conversion is auditable.
-
-This needs only a reception count, not a full stat line — both CBS (`rec`)
-and the older BeerSheets exports (`REC`) carry one. Quarterback sheets have no
-reception column and are passed through unchanged.
-
-> CBS's own `ppr` and `nonppr` pages differ by more than receptions (Jahmyr
-> Gibbs by 16.5 points), so they are not internally consistent. This
-> conversion treats the PPR projection as the source of truth and assumes
-> half PPR differs from it only in the per-reception value.
-
-### Source note
-
-Through 2025 the sheets were manual exports from a BeerSheets / FantasyPros
-ECR workbook, which supplied a `LOW` / `AVG` / `HIGH` projection band plus
-extra reference tabs (RISK, SNAKE, Rookies, Scoring, ECR). Those exports are
-preserved under `data/2025/` locally but are not reproducible from code.
-
-From 2026 the sheets come from CBS via `./run.py projections`, which gives
-a single point projection rather than a band. Nothing in the repo consumed
-`LOW`/`HIGH`, so ranking behaviour is unchanged — but the uncertainty
-information is gone, and there is no rookie or bye-week data.
+The rest of the source's projection is left untouched, rather than recomputing
+from the stat line and having to reproduce each provider's bonuses and
+rounding. Quarterbacks have no reception column and pass through unchanged.
 
 ## Setup
 

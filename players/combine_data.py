@@ -1,7 +1,7 @@
 
 import pandas as pd
 
-from config import SEASON, data_dir, position_file
+from config import SCORING, SEASON, position_file, scoring_dir
 
 position_numbers = {
     "QB": 12,
@@ -31,4 +31,4 @@ result = pd.concat(all_frames, ignore_index=True)
 result_overall = result.sort_values("AVG Differential", ascending=False)
 print(result.head(10))
 
-result_overall.to_csv(data_dir(SEASON) / "FULL-Table 1.csv", index=False)
+result_overall.to_csv(scoring_dir(SCORING, SEASON) / "FULL-Table 1.csv", index=False)

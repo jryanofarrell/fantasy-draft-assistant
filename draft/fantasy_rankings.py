@@ -7,7 +7,8 @@ from config import (
     POSITIONS,
     ROSTER_SLOTS,
     SEASON,
-    data_dir,
+    SCORING,
+    scoring_dir,
     position_file,
 )
 
@@ -84,7 +85,7 @@ ranked_overall["PosRank"] = ranked_overall.groupby("Position")["VOR"] \
     .rank(method="first", ascending=False).astype(int)
 
 # Save + show summary
-out_path = data_dir(SEASON) / "rankings_vor_flexaware.csv"
+out_path = scoring_dir(SCORING, SEASON) / "rankings_vor_flexaware.csv"
 ranked_overall.to_csv(out_path, index=False)
 
 print("Replacement lines (after allocating FLEX):")

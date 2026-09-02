@@ -1,161 +1,103 @@
-"""Download CBS season projections and write per-position draft sheets.
+"""Download projections from every source and build the consensus board.
 
-Produces `data/<season>/<POS>-Table 1.csv` with the `Player` / `AVG` columns
-the draft assistant expects, where `AVG` is projected season fantasy points
-converted to the league's reception scoring (see `league.yaml`).
+    ./run.py projections                       # league scoring, all sources
+    ./run.py projections --scoring ppr
+    ./run.py projections --all-scorings
+    ./run.py projections --sources cbs,sleeper
 
-    python download_projections.py --season 2026
+Per-source sheets land in data/<season>/<scoring>/sources/<source>/ and the
+merged board the draft tools read is written alongside them at
+data/<season>/<scoring>/<POS>-Table 1.csv.
 """
+from __future__ import annotations
+
 import argparse
-import io
-import re
+import sys
 
 import pandas as pd
-import requests
-import requests_cache
 
-from config import LEAGUE, POSITIONS, SEASON, data_dir, position_file
-
-URL_TEMPLATE = (
-    "https://www.cbssports.com/fantasy/football/stats/"
-    "{pos}/{season}/season/projections/ppr/"
-)
-HEADERS = {
-    "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) Safari/537.36"
-}
-
-# We scrape CBS's PPR pages, which award 1 point per reception.
-SOURCE_RECEPTION_POINTS = 1.0
-
-# CBS renders the player cell as:
-#   "J. Gibbs  RB  DET  Jahmyr Gibbs  RB  DET"
-# i.e. an abbreviated name then the full name, each followed by pos and team.
-PLAYER_CELL = re.compile(r"\s{2,}")
+from config import POSITIONS, SCORING, SCORING_FORMATS, SEASON, position_file, scoring_dir
+from players import consensus
+from players.sources import SOURCES
 
 
-def parse_player_cell(cell: str) -> tuple[str, str, str]:
-    """Split a CBS player cell into (full name, position, team)."""
-    parts = [p.strip() for p in PLAYER_CELL.split(str(cell).strip()) if p.strip()]
-    if len(parts) >= 3:
-        # The full name is the third-from-last field; pos and team trail it.
-        return parts[-3], parts[-2], parts[-1]
-    return str(cell).strip(), "", ""
+def write_frame(df: pd.DataFrame, path) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    df.to_csv(path, index=False)
 
 
-def flatten_columns(df: pd.DataFrame) -> pd.DataFrame:
-    """CBS uses a two-row header; keep the lower (abbreviated) level."""
-    df = df.copy()
-    df.columns = [
-        c[1].strip() if isinstance(c, tuple) else str(c).strip() for c in df.columns
-    ]
-    return df
-
-
-def shorten(col: str) -> str:
-    """'yds  Passing Yards' -> 'yds'; disambiguation happens via dedupe()."""
-    return PLAYER_CELL.split(col)[0].strip()
-
-
-def dedupe(names: list[str]) -> list[str]:
-    """CBS reuses 'att'/'yds'/'td' for passing and rushing; suffix repeats."""
-    seen: dict[str, int] = {}
-    out = []
-    for n in names:
-        if n in seen:
-            seen[n] += 1
-            out.append(f"{n}.{seen[n]}")
+def run(season: int, scorings: list[str], sources: list[str], min_sources: int) -> int:
+    fetched: dict[str, dict[str, pd.DataFrame]] = {}
+    for name in sources:
+        module = SOURCES[name]
+        try:
+            fetched[name] = module.fetch(season)
+        except Exception as exc:  # a dead source shouldn't sink the others
+            print(f"  {name}: FAILED — {exc}", file=sys.stderr)
+            fetched[name] = {}
         else:
-            seen[n] = 0
-            out.append(n)
-    return out
+            formats = ", ".join(sorted(fetched[name])) or "nothing"
+            rows = sum(len(d) for d in fetched[name].values())
+            print(f"  {name}: {rows} rows across {formats}")
 
+    if not any(fetched.values()):
+        print("error: every source failed", file=sys.stderr)
+        return 1
 
-def to_league_points(
-    points: pd.Series,
-    receptions: pd.Series,
-    reception_points: float,
-    source_reception_points: float = SOURCE_RECEPTION_POINTS,
-) -> pd.Series:
-    """Restate PPR points under the league's per-reception value.
-
-    Only the reception term differs between scoring formats, so rather than
-    recomputing fantasy points from the stat line — which would have to
-    reproduce CBS's bonuses and rounding exactly — we adjust that one term
-    and leave the rest of their projection untouched.
-    """
-    delta = source_reception_points - reception_points
-    return points - delta * receptions.fillna(0)
-
-
-def fetch_position(pos: str, season: int) -> pd.DataFrame:
-    url = URL_TEMPLATE.format(pos=pos, season=season)
-    html = requests.get(url, headers=HEADERS, timeout=30).text
-    tables = pd.read_html(io.StringIO(html))
-    if not tables:
-        raise RuntimeError(f"No tables found at {url}")
-
-    df = flatten_columns(tables[0])
-
-    points_col = next((c for c in df.columns if shorten(c) == "fpts"), None)
-    if points_col is None:
-        raise RuntimeError(
-            f"{pos} {season}: no 'fpts' column found — CBS may have changed "
-            f"their table layout. Columns: {df.columns.tolist()}"
-        )
-
-    parsed = df.iloc[:, 0].apply(parse_player_cell)
-    stats = df.iloc[:, 1:]
-    stats.columns = dedupe([shorten(c) for c in stats.columns])
-
-    ppr_points = pd.to_numeric(df[points_col], errors="coerce")
-    # QB sheets carry no reception column; nothing to convert there.
-    receptions = (
-        pd.to_numeric(stats["rec"], errors="coerce")
-        if "rec" in stats.columns
-        else pd.Series(0.0, index=stats.index)
-    )
-
-    out = pd.DataFrame(
-        {
-            "Player": [p[0] for p in parsed],
-            "Team": [p[2] for p in parsed],
-            "Position": pos,
-            # The draft assistant ranks on AVG. CBS gives a single projection
-            # rather than the LOW/AVG/HIGH band the old BeerSheets exports had.
-            "AVG": to_league_points(
-                ppr_points, receptions, LEAGUE.reception_points
-            ),
-            "PPR": ppr_points,
+    for scoring in scorings:
+        by_source = {
+            name: frames[scoring]
+            for name, frames in fetched.items()
+            if scoring in frames and not frames[scoring].empty
         }
-    ).join(stats)
+        if not by_source:
+            print(f"\n{scoring}: no source produced this format, skipping")
+            continue
 
-    out = out.dropna(subset=["AVG"])
-    out = out[out["Player"].astype(str).str.strip() != ""]
-    return out.sort_values("AVG", ascending=False).reset_index(drop=True)
+        for name, df in by_source.items():
+            for pos in POSITIONS:
+                subset = df[df["Position"] == pos]
+                if not subset.empty:
+                    write_frame(subset, position_file(pos, season, scoring, source=name))
+
+        board = consensus.build(by_source, min_sources=min_sources)
+        print(f"\n{scoring}  ({', '.join(sorted(by_source))})")
+        for pos in POSITIONS:
+            subset = board[board["Position"] == pos].reset_index(drop=True)
+            write_frame(subset, position_file(pos, season, scoring))
+            full = int((subset["sources"] == len(by_source)).sum())
+            print(f"  {pos}: {len(subset):>4} players  ({full} with all "
+                  f"{len(by_source)} sources)")
+        print(f"  -> {scoring_dir(scoring, season)}")
+    return 0
 
 
-def main() -> None:
-    parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--season", type=int, default=SEASON)
-    args = parser.parse_args()
+def main() -> int:
+    ap = argparse.ArgumentParser(description=__doc__,
+                                 formatter_class=argparse.RawDescriptionHelpFormatter)
+    ap.add_argument("--season", type=int, default=SEASON)
+    ap.add_argument("--scoring", default=SCORING, choices=SCORING_FORMATS,
+                    help=f"scoring format to build (default: {SCORING})")
+    ap.add_argument("--all-scorings", action="store_true",
+                    help="build every scoring format, not just the league's")
+    ap.add_argument("--sources", default=",".join(SOURCES),
+                    help=f"comma-separated subset of: {', '.join(SOURCES)}")
+    ap.add_argument("--min-sources", type=int, default=1,
+                    help="drop players backed by fewer than this many sources")
+    args = ap.parse_args()
 
-    out_dir = data_dir(args.season)
-    out_dir.mkdir(parents=True, exist_ok=True)
+    requested = [s.strip() for s in args.sources.split(",") if s.strip()]
+    unknown = [s for s in requested if s not in SOURCES]
+    if unknown:
+        print(f"error: unknown source(s) {unknown}; known: {list(SOURCES)}",
+              file=sys.stderr)
+        return 2
 
-    # Cache responses so repeated runs during a draft don't re-hit CBS.
-    requests_cache.install_cache(str(out_dir / "cbs_cache"), expire_after=3600)
-
-    print(
-        f"Scoring: {LEAGUE.scoring_type} "
-        f"({LEAGUE.reception_points} pts/reception; CBS source is "
-        f"{SOURCE_RECEPTION_POINTS})"
-    )
-    for pos in POSITIONS:
-        df = fetch_position(pos, args.season)
-        dest = position_file(pos, args.season)
-        df.to_csv(dest, index=False)
-        print(f"{pos}: {len(df):>3} players -> {dest.relative_to(out_dir.parent.parent)}")
+    scorings = list(SCORING_FORMATS) if args.all_scorings else [args.scoring]
+    print(f"season {args.season} | scoring: {', '.join(scorings)}\n"
+          f"fetching {len(requested)} source(s)")
+    return run(args.season, scorings, requested, args.min_sources)
 
 
 if __name__ == "__main__":
-    main()
+    raise SystemExit(main())
