@@ -367,18 +367,21 @@ def run_live(args):
 
     shown_for = None
     previous = None
+    batch: list[str] = []
     try:
         while True:
             state = draft.state()
             fresh = draft.new_picks(state)
+            batch = []
             for entry in fresh:
                 mine = (entry.get("team_id") == my_team_id
                         if my_team_id is not None
                         else entry["overall"] in my_schedule)
                 available, my_roster, row = apply_pick(
                     available, my_roster, entry, mine)
-                previous = (f"{entry['player']} [{entry['position']}]"
-                            f"{'  <- YOU' if mine else ''}")
+                batch.append(f"#{entry['overall']} {entry['player']} "
+                             f"[{entry['position']}]"
+                             f"{'  <- YOU' if mine else ''}")
 
             if state["complete"]:
                 print("\ndraft complete")
@@ -402,8 +405,18 @@ def run_live(args):
             if fresh or (on_clock and shown_for != next_overall):
                 # A pick is only visible once it has been made, so the header
                 # names the team now on the clock and the player who just went.
-                if previous:
+                # Several can land between polls — list them all rather than
+                # letting the earlier ones vanish behind the latest.
+                if len(batch) == 1:
+                    print(f"Previous Pick: {batch[0]}")
+                elif len(batch) > 1:
+                    print("Previous Picks:")
+                    for line in batch:
+                        print(f"  {line}")
+                elif previous:
                     print(f"Previous Pick: {previous}")
+                if batch:
+                    previous = batch[-1]
                 rnd = (next_overall - 1) // LEAGUE_SIZE + 1
                 team = on_the_clock.get(next_overall, "")
                 tag = "  <<< YOU ARE ON THE CLOCK" if on_clock else ""
@@ -469,15 +482,16 @@ def print_final_roster(my_roster):
     starters_idx = best_starting_lineup_indices(my_roster)
     starters = my_roster.loc[list(starters_idx)]
     bench = my_roster.drop(index=list(starters_idx), errors="ignore")
-    print("\n=== Your Starters ===")
-    print(starters.sort_values(["Position", POINTS_COL], ascending=[True, False])
-          [["Player", "Position", POINTS_COL, "VOR"]]
-          .rename(columns={POINTS_COL: "AVG"}).to_string(index=False))
+    cols = ["Player", "Position", POINTS_COL, "VOR"]
+    print("\nYour Starters")
+    print(indent(table_mod.render(
+        starters.sort_values(["Position", POINTS_COL], ascending=[True, False])[cols]
+        .rename(columns={POINTS_COL: "AVG", "Position": "Pos"}))))
     if not bench.empty:
-        print("\n--- Bench ---")
-        print(bench.sort_values(["VOR", POINTS_COL], ascending=[False, False])
-              [["Player", "Position", POINTS_COL, "VOR"]]
-              .rename(columns={POINTS_COL: "AVG"}).to_string(index=False))
+        print("\nBench")
+        print(indent(table_mod.render(
+            bench.sort_values(["VOR", POINTS_COL], ascending=[False, False])[cols]
+            .rename(columns={POINTS_COL: "AVG", "Position": "Pos"}))))
 
 
 def main():
