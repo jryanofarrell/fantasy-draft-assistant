@@ -117,18 +117,56 @@ that and use whatever interpreter you invoked it with.
 | `./run.py combine` | Merges the per-position sheets into `FULL-Table 1.csv` with an `AVG Differential` column. |
 | `./run.py league` | Prints the active league config. |
 | `./run.py espn` | Diffs `league.yaml` against live ESPN settings. `--write` saves them to `league/league.espn.yaml`. |
+| `./run.py history` | Positional draft tendencies from the league's own past drafts. Refreshes the VONA cache. |
+| `./run.py live` | Follows a live draft and prints picks as they land. `--provider sleeper --draft-id N` for Sleeper, `--league-id N` for an ESPN mock lobby. |
 
 Run `./run.py` with no arguments for the command list.
 
 ### How the assistant ranks
 
-1. Compute the replacement-level player at each position for a 12-team league.
-2. Greedily allocate the 24 league-wide FLEX slots to the next-best RB/WR/TE,
-   pushing those replacement levels deeper.
-3. `VOR = AVG − ReplacementAVG`.
-4. Each pick, score candidates by **marginal gain**: how much your best legal
-   starting lineup improves if you add that player, measured against a
-   "ghost" roster of replacement-level players.
+Three numbers, answering different questions.
+
+**VOR — value over replacement.** Counts how many players the league starts at
+each position (12 teams x 2 RB, plus the flex slots handed to whichever
+position has the best next-man-up), and measures each player against the one
+at that line. This is structural scarcity: tight ends matter because only
+twelve start and the cliff is steep; quarterbacks don't because QB13 is nearly
+QB5.
+
+**MarginalGain — what he adds to *your* roster.** Rebuilds your best legal
+starting lineup with the player added and compares it against a ghost roster
+of replacement-level players. Once your flex slots are full, another running
+back stops being worth much.
+
+**VONA — value over next available.** Both numbers above are static: they
+price a player as though you could take anyone at any time. In a snake draft
+you cannot, and at slot 4 sixteen picks pass before your next turn. VONA
+compares a player to the best you could plausibly still get at his position
+when you next pick:
+
+```
+VONA = his points − points of the best likely survivor at his position
+```
+
+How many disappear comes from **this league's own drafts**, pulled from ESPN
+by `./run.py history` and cached. Five seasons of picks, every id resolved
+against that season's player universe rather than a current one, so retired
+players don't silently drop out and skew the sample.
+
+The board sorts on VONA, with MarginalGain breaking ties so a player who
+cannot crack your lineup isn't over-rated by scarcity alone. On your pick it
+also prints what waiting would cost at every position.
+
+The difference is not cosmetic. This league has taken **zero quarterbacks in
+rounds 1-2 across five seasons**, so Josh Allen — the highest raw projection
+on the board — scores a VONA of 0.0: nothing is lost by waiting. VOR cannot
+express that.
+
+**Caveats.** Sixty picks per round across five seasons is a small sample, and
+league membership drifts. The 2021-22 seasons were peak RB-heavy strategy
+league-wide, so some of the "tendency" is era rather than these managers. VONA
+is shown next to VOR rather than replacing it, so you can see when they
+disagree.
 
 ## Data (not committed)
 

@@ -13,3 +13,6 @@ league.espn.yaml
 
 # ESPN cookies — never commit
 auth
+
+# Cached from ESPN by ./run.py history
+league/draft_history.json

@@ -47,6 +47,8 @@ COMMANDS = {
     "combine": ("players.combine_data", "Merge sheets into FULL-Table"),
     "league": ("league.league", "Print the active league config"),
     "espn": ("league.import_espn_league", "Diff league.yaml against ESPN"),
+    "history": ("league.draft_history", "Positional tendencies from past drafts"),
+    "live": ("draft.live", "Follow a live draft and print picks as they land"),
 }
 
 

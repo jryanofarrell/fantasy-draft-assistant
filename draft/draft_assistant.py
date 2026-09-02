@@ -2,7 +2,8 @@
 import pandas as pd
 import numpy as np
 
-from league import league
+from league import draft_history, league
+from draft import vona as vona_mod
 
 from config import (
     BENCH_SLOTS,
@@ -75,6 +76,9 @@ def compute_replacements(dfs, league_size, roster_slots, flex_eligible):
     return rep_val, rep_idx, flex_taken
 
 rep_val, rep_idx, flex_taken = compute_replacements(dfs, LEAGUE_SIZE, ROSTER_SLOTS, FLEX_ELIGIBLE)
+
+# Positional tendencies from this league's own past drafts, used for VONA.
+HISTORY = draft_history.load()
 
 # ===== Build VOR pool =====
 frames = []
@@ -200,7 +204,9 @@ def suggest_top_by_positions(available: pd.DataFrame, my_roster: pd.DataFrame,
     return pre.head(k)[["Player", "Position", POINTS_COL, "VOR", "MarginalGain", "Key"]].reset_index(drop=True)
 
 
-def suggest_top(available: pd.DataFrame, my_roster: pd.DataFrame, k: int = 10) -> pd.DataFrame:
+def suggest_top(available: pd.DataFrame, my_roster: pd.DataFrame, k: int = 10,
+                current_pick: int | None = None,
+                next_pick: int | None = None) -> pd.DataFrame:
     cand = available.copy()
     # keep calculations safe
     for col in [POINTS_COL, "VOR"]:
@@ -214,9 +220,19 @@ def suggest_top(available: pd.DataFrame, my_roster: pd.DataFrame, k: int = 10) -
     for _, r in pre.iterrows():
         gains.append(marginal_gain(my_roster, r))
     pre["MarginalGain"] = gains
+    if current_pick is not None:
+        pre["VONA"] = vona_mod.compute(
+            pre, HISTORY, LEAGUE_SIZE, current_pick, next_pick, POINTS_COL
+        )
+    else:
+        pre["VONA"] = 0.0
 
-    pre = pre.sort_values(["MarginalGain", "VOR", POINTS_COL], ascending=[False, False, False])
-    return pre.head(k)[["Player", "Position", POINTS_COL, "VOR", "MarginalGain", "Key"]].reset_index(drop=True)
+    # VONA orders the board, but marginal gain still breaks ties: a player
+    # who cannot crack your starting lineup is worth less than his scarcity
+    # suggests.
+    pre = pre.sort_values(["VONA", "MarginalGain", "VOR"], ascending=False)
+    return pre.head(k)[["Player", "Position", POINTS_COL, "VOR", "MarginalGain",
+                        "VONA", "Key"]].reset_index(drop=True)
 
 def pretty_roster_summary(my_roster: pd.DataFrame):
     if my_roster.empty:
@@ -244,7 +260,14 @@ def main():
     print()
 
     print(league.summary(LEAGUE))
+    if HISTORY:
+        print(f"  Draft history: {len(HISTORY.get('seasons', []))} seasons "
+              f"({HISTORY.get('picks', 0)} picks) informing VONA")
+    else:
+        print("  Draft history unavailable — VONA disabled, VOR only")
     print()
+
+    my_schedule = vona_mod.my_picks(MY_SLOT, LEAGUE_SIZE, LEAGUE.drafted_roster_size + 4)
 
     pick = 1
     total_my_picks_allowed = LEAGUE.drafted_roster_size
@@ -274,13 +297,24 @@ def main():
 
         print(f"\n--- Pick #{pick} --- ")
 
-        sugg = suggest_top(available, my_roster, k=10)
+        upcoming = [p for p in my_schedule if p >= pick]
+        current_target = upcoming[0] if upcoming else None
+        following = upcoming[1] if len(upcoming) > 1 else None
+        sugg = suggest_top(available, my_roster, k=10,
+                           current_pick=current_target, next_pick=following)
         if sugg.empty:
             print("No candidates to suggest.")
             break
 
-        view = sugg[["Player", "Position", POINTS_COL, "VOR", "MarginalGain"]].rename(columns={POINTS_COL: "AVG"})
+        view = sugg[["Player", "Position", POINTS_COL, "VOR", "MarginalGain",
+                     "VONA"]].rename(columns={POINTS_COL: "AVG"})
         print(view.to_string(index=True))
+
+        if me and current_target and following:
+            gap = following - current_target - 1
+            print(f"\nWaiting until pick {following} costs you ({gap} picks away):")
+            print(vona_mod.summary(available, HISTORY, LEAGUE_SIZE,
+                                   current_target, following, POINTS_COL).to_string(index=False))
 
         rbwr = suggest_top_by_positions(available, my_roster, {"RB", "WR"}, k=10)
         if not rbwr.empty:
