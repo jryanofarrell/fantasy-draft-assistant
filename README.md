@@ -40,6 +40,28 @@ eligible positions, and so on.
 > slot, and a 7-man bench — this config carries last year's FLEX 2, no K or
 > D/ST, and a 5-man bench.
 
+### Importing from ESPN
+
+Rather than hand-checking the settings, pull them from the league directly:
+
+```bash
+export ESPN_S2='...' ESPN_SWID='{...}'      # private leagues only
+python import_espn_league.py --league-id 123456
+```
+
+`--league-id` is the `leagueId` in your ESPN URL. The script prints ESPN's
+settings beside the current `league.yaml` and marks every field that differs.
+It does not modify `league.yaml`; `--write` saves the ESPN values to
+`league.espn.yaml` for you to review and merge.
+
+Private leagues need the `espn_s2` and `SWID` cookies from a logged-in browser
+session (DevTools → Application → Cookies → espn.com). Prefer the environment
+variables over `--espn-s2` / `--swid` flags so the cookies don't land in your
+shell history. They are credentials — don't commit them.
+
+Scoring rules ESPN reports that aren't modelled in `league.yaml` are listed
+rather than silently dropped, so you can see what wasn't carried across.
+
 ### Kickers and defenses
 
 `league.yaml` records K and D/ST slots and their scoring so the file is a
@@ -58,6 +80,7 @@ them yourself.
 | `combine_data_beersheets.py` | Merges the per-position sheets into `FULL-Table 1.csv`, adding an `AVG Differential` column (points above the average league starter at that position). |
 | `download_data_nfl_data.py` | Scratch script — dumps `nfl_data_py` seasonal data. |
 | `league.py` | Loads and validates `league.yaml`. Run directly to print the active league. |
+| `import_espn_league.py` | Pulls live settings from ESPN and diffs them against `league.yaml`. |
 | `config.py` | Bridges `league.yaml` to the scripts and resolves data paths. |
 
 ### How the assistant ranks
