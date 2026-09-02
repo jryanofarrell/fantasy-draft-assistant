@@ -24,10 +24,10 @@ from typing import Any
 import requests
 import yaml
 
-import league as league_mod
-from config import SEASON
+from league import league as league_mod
+from league.config import REPO_ROOT, SEASON
 
-AUTH_FILE = Path(__file__).parent / "auth"
+AUTH_FILE = REPO_ROOT / "auth"
 BASE = "https://lm-api-reads.fantasy.espn.com/apis/v3/games/ffl"
 HEADERS = {
     "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) Safari/537.36"
@@ -362,7 +362,7 @@ def main() -> int:
               f"(statId, points): {mapped['_unknown_scoring'][:10]}")
 
     if args.write:
-        out = Path("league.espn.yaml")
+        out = REPO_ROOT / "league" / "league.espn.yaml"
         payload_out = {k: v for k, v in mapped.items() if not k.startswith("_")}
         if slot:
             payload_out["draft"]["my_slot"] = slot

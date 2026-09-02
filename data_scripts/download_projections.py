@@ -6,12 +6,6 @@ converted to the league's reception scoring (see `league.yaml`).
 
     python download_projections.py --season 2026
 """
-import sys
-from pathlib import Path
-
-# This script lives in data_scripts/; the shared config sits at the repo root.
-sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
-
 import argparse
 import io
 import re
@@ -20,7 +14,7 @@ import pandas as pd
 import requests
 import requests_cache
 
-from config import LEAGUE, POSITIONS, SEASON, data_dir, position_file
+from league.config import LEAGUE, POSITIONS, SEASON, data_dir, position_file
 
 URL_TEMPLATE = (
     "https://www.cbssports.com/fantasy/football/stats/"

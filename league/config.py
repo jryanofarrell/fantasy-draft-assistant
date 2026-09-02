@@ -5,7 +5,7 @@ draft scripts can keep importing plain constants.
 """
 from pathlib import Path
 
-import league as _league
+from league import league as _league
 
 LEAGUE = _league.load()
 
@@ -22,7 +22,7 @@ POINTS_COL = LEAGUE.points_column
 POSITIONS = LEAGUE.positions
 
 # ===== Files =====
-REPO_ROOT = Path(__file__).parent
+REPO_ROOT = Path(__file__).resolve().parent.parent
 FILE_TEMPLATE = "{pos}-Table 1.csv"
 
 

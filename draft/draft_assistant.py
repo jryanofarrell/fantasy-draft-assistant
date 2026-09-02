@@ -2,9 +2,9 @@
 import pandas as pd
 import numpy as np
 
-import league
+from league import league
 
-from config import (
+from league.config import (
     BENCH_SLOTS,
     LEAGUE,
     FLEX_ELIGIBLE,

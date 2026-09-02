@@ -1,7 +1,7 @@
 import pandas as pd
 import numpy as np
 
-from config import (
+from league.config import (
     FLEX_ELIGIBLE,
     LEAGUE_SIZE,
     POSITIONS,

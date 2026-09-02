@@ -30,7 +30,7 @@ currently reports no differences.
 Print the loaded config at any time:
 
 ```bash
-python league.py
+./run.py league
 ```
 
 The loader validates on load and refuses to run on a config that would
@@ -44,7 +44,7 @@ Rather than hand-checking settings, pull them from the league directly:
 
 ```bash
 cp auth.example auth      # then fill in your cookies
-python import_espn_league.py
+./run.py espn
 ```
 
 The script prints ESPN's settings beside the current `league.yaml` and marks
@@ -77,18 +77,41 @@ are no projections for those positions in the data. If you set those slots to
 a non-zero count, the tool excludes them from its roster math and you draft
 them yourself.
 
-## Scripts
+## Layout
 
-| Script | What it does |
+```
+run.py                 entry point for everything
+league/                what the league's rules are
+  league.yaml            the settings (edit this)
+  league.py              loads and validates them
+  config.py              bridges them to the scripts, resolves paths
+  import_espn_league.py  pulls live settings from ESPN
+draft/                 drafting tools
+  draft_assistant.py     interactive snake-draft assistant
+  fantasy_rankings.py    standalone VOR rankings
+data_scripts/          getting projections
+  download_projections.py  scrape CBS
+  combine_data.py          merge sheets into FULL-Table
+data/<season>/         the projection sheets (gitignored)
+auth                   ESPN credentials (gitignored)
+```
+
+Everything runs through `run.py`, which puts the repo root on `sys.path` so
+modules can use absolute imports (`from league.config import ...`) without
+path shims. Running the scripts directly will not work.
+
+## Commands
+
+| Command | What it does |
 | --- | --- |
-| `data_scripts/download_projections.py` | Scrapes CBS PPR season projections for QB/RB/WR/TE into `data/<season>/<POS>-Table 1.csv`. Run this first each season. |
-| `draft_assistant.py` | The main tool. Interactive snake-draft assistant — tracks every team's picks, recomputes suggestions each pick, prints your final starters + bench. |
-| `fantasy_rankings.py` | Standalone flex-aware VOR rankings; writes `data/<season>/rankings_vor_flexaware.csv`. |
-| `data_scripts/combine_data.py` | Merges the per-position sheets into `FULL-Table 1.csv`, adding an `AVG Differential` column (points above the average league starter at that position). |
-| `data_scripts/download_data_nfl_data.py` | Scratch script — dumps `nfl_data_py` seasonal data. |
-| `league.py` | Loads and validates `league.yaml`. Run directly to print the active league. |
-| `import_espn_league.py` | Pulls live settings from ESPN and diffs them against `league.yaml`. Reads `auth`. |
-| `config.py` | Bridges `league.yaml` to the scripts and resolves data paths. |
+| `./run.py projections --season 2026` | Scrapes CBS projections into `data/<season>/`. Run first each season. |
+| `./run.py draft` | The main tool. Interactive snake-draft assistant — tracks every team's picks, recomputes suggestions each pick, prints your final starters + bench. |
+| `./run.py rankings` | Writes `data/<season>/rankings_vor_flexaware.csv`. |
+| `./run.py combine` | Merges the per-position sheets into `FULL-Table 1.csv` with an `AVG Differential` column. |
+| `./run.py league` | Prints the active league config. |
+| `./run.py espn` | Diffs `league.yaml` against live ESPN settings. `--write` saves them to `league/league.espn.yaml`. |
+
+Run `./run.py` with no arguments for the command list.
 
 ### How the assistant ranks
 
@@ -105,7 +128,7 @@ them yourself.
 Data lives under `data/<season>/` and is gitignored. Regenerate it with:
 
 ```bash
-python data_scripts/download_projections.py --season 2026
+./run.py projections --season 2026
 ```
 
 That writes one sheet per position:
@@ -153,7 +176,7 @@ ECR workbook, which supplied a `LOW` / `AVG` / `HIGH` projection band plus
 extra reference tabs (RISK, SNAKE, Rookies, Scoring, ECR). Those exports are
 preserved under `data/2025/` locally but are not reproducible from code.
 
-From 2026 the sheets come from CBS via `data_scripts/download_projections.py`, which gives
+From 2026 the sheets come from CBS via `./run.py projections`, which gives
 a single point projection rather than a band. Nothing in the repo consumed
 `LOW`/`HIGH`, so ranking behaviour is unchanged — but the uncertainty
 information is gone, and there is no rookie or bye-week data.
@@ -163,7 +186,7 @@ information is gone, and there is no rookie or bye-week data.
 ```bash
 python -m venv .venv && source .venv/bin/activate
 pip install -r requirements.txt
-python data_scripts/download_projections.py --season 2026
+./run.py projections --season 2026
 ```
 
 `prompt_toolkit` is optional — install it for fuzzy player-name autocomplete
@@ -173,7 +196,7 @@ must type names exactly as `Name (POS)`.
 ## Running a draft
 
 ```bash
-python draft_assistant.py
+./run.py draft
 ```
 
 At each pick:

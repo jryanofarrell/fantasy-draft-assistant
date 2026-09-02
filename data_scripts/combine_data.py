@@ -1,13 +1,7 @@
 
-import sys
-from pathlib import Path
-
-# This script lives in data_scripts/; the shared config sits at the repo root.
-sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
-
 import pandas as pd
 
-from config import SEASON, data_dir, position_file
+from league.config import SEASON, data_dir, position_file
 
 position_numbers = {
     "QB": 12,
