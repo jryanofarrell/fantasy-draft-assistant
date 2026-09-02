@@ -305,17 +305,16 @@ def parse_args(argv=None):
 
 def window_for(on_clock_pick: int, my_next: int, schedule: list[int],
                is_mine: bool) -> tuple[int, int]:
-    """The stretch of picks VONA prices.
+    """The stretch of picks VONA prices: your pick to your next one.
 
-    On the clock, waiting means passing to your following pick. Otherwise it
-    means waiting out everyone between now and your turn — and the pick
-    currently on the clock has not happened yet, so it belongs inside the
-    window.
+    Always your own window, whoever is currently on the clock. The question
+    is what a player costs *you* by being passed over — the gap between
+    taking him at your turn and taking whoever is left at the turn after.
+    Watching someone else pick doesn't change that, it just updates the board
+    the answer is read off.
     """
-    if is_mine:
-        following = next((p for p in schedule if p > my_next), None)
-        return my_next, following
-    return on_clock_pick - 1, my_next
+    following = next((p for p in schedule if p > my_next), None)
+    return my_next, following
 
 
 def apply_pick(available, my_roster, entry, mine: bool):
