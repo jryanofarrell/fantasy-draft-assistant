@@ -588,37 +588,16 @@ def main():
 
         print(f"\n--- Pick #{pick} --- ")
 
-        upcoming = [p for p in my_schedule if p >= pick]
-        current_target = upcoming[0] if upcoming else None
-        following = upcoming[1] if len(upcoming) > 1 else None
-        sugg = suggest_top(available, my_roster, k=10,
-                           current_pick=current_target, next_pick=following)
+        start, end = window_for(pick, next((p for p in my_schedule if p >= pick),
+                                           pick), my_schedule, me)
+        sugg = suggest_top(available, my_roster, k=LEAGUE.suggestions,
+                           current_pick=start, next_pick=end)
         if sugg.empty:
             print("No candidates to suggest.")
             break
-
-        view = sugg[["Player", "Position", POINTS_COL, "VOR", "MarginalGain",
-                     "VONA"]].rename(columns={POINTS_COL: "AVG"})
-        print(view.to_string(index=True))
-
-        if me and current_target and following:
-            gap = following - current_target - 1
-            print(f"\nWaiting until pick {following} costs you ({gap} picks away):")
-            print(vona_mod.summary(available, HISTORY, LEAGUE_SIZE,
-                                   current_target, following, POINTS_COL).to_string(index=False))
-
-        rbwr = suggest_top_by_positions(available, my_roster, {"RB", "WR"}, k=10)
-        if not rbwr.empty:
-            print("\nTop RB/WR:")
-            print(rbwr[["Player", "Position", POINTS_COL, "VOR", "MarginalGain"]]
-                .rename(columns={POINTS_COL: "AVG"})
-                .to_string(index=True)
-            )
-
+        show_board(available, my_roster, start, end, on_clock=me)
 
         if me:
-            print(f"\n[{pretty_roster_summary(my_roster)}]")
-
             default_choice = f"{sugg.iloc[0]['Player']} ({sugg.iloc[0]['Position']})"
             if HAVE_PT:
                 user_in = prompt(f"Your pick (default: {default_choice}): ", completer=completer).strip()
