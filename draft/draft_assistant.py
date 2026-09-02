@@ -244,7 +244,8 @@ def suggest_top(available: pd.DataFrame, my_roster: pd.DataFrame, k: int = 10,
     pre["MarginalGain"] = score_candidates(pre, my_roster)
     if current_pick is not None:
         pre["VONA"] = vona_mod.compute(
-            pre, HISTORY, LEAGUE_SIZE, current_pick, next_pick, POINTS_COL
+            pre, HISTORY, LEAGUE_SIZE, current_pick, next_pick, POINTS_COL,
+            pool=cand,
         )
     else:
         pre["VONA"] = 0.0

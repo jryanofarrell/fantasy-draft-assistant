@@ -69,27 +69,36 @@ def next_available(
 
 
 def compute(
-    available: pd.DataFrame,
+    candidates: pd.DataFrame,
     history: dict | None,
     teams: int,
     current_pick: int,
     next_pick: int | None,
     points_col: str = "AVG",
+    pool: pd.DataFrame | None = None,
 ) -> pd.Series:
-    """VONA for every row of `available`.
+    """VONA for every row of `candidates`.
+
+    `pool` is the full remaining board, used to find each position's baseline.
+    It matters: callers shortlist candidates before scoring them, and a
+    shortlist taken by overall value holds only a handful of quarterbacks. If
+    the baseline were read off that shortlist it would run out of players at
+    the position and clamp to the last one, quietly reporting the best
+    available quarterback as his own baseline.
 
     With no next pick — the final round — nothing can be lost by waiting, so
     every player scores zero and VOR alone decides.
     """
-    if next_pick is None or available.empty:
-        return pd.Series(0.0, index=available.index)
+    if next_pick is None or candidates.empty:
+        return pd.Series(0.0, index=candidates.index)
 
+    board = pool if pool is not None and not pool.empty else candidates
     gone = expected_gone(history, teams, current_pick, next_pick)
     baseline = {
-        position: next_available(available, position, gone.get(position, 0.0), points_col)[0]
-        for position in available["Position"].unique()
+        position: next_available(board, position, gone.get(position, 0.0), points_col)[0]
+        for position in candidates["Position"].unique()
     }
-    return available.apply(
+    return candidates.apply(
         lambda r: float(r[points_col]) - baseline.get(r["Position"], float(r[points_col])),
         axis=1,
     )
