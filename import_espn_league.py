@@ -4,9 +4,9 @@
     python import_espn_league.py --league-id 123456 --write
 
 Private leagues (most are) need two cookies from a browser session that is
-logged in to ESPN. In the browser: DevTools -> Application -> Cookies ->
-espn.com, copy `espn_s2` and `SWID`. Pass them with --espn-s2/--swid or set
-ESPN_S2 and ESPN_SWID in the environment.
+logged in to ESPN. Copy `auth.example` to `auth` and fill it in; `auth` is
+gitignored. Values may also come from the environment or CLI flags, which
+take precedence over the file.
 
 By default this only prints what ESPN reports alongside the current config.
 `--write` saves the ESPN values to league.espn.yaml for you to review and
@@ -27,6 +27,7 @@ import yaml
 import league as league_mod
 from config import SEASON
 
+AUTH_FILE = Path(__file__).parent / "auth"
 BASE = "https://lm-api-reads.fantasy.espn.com/apis/v3/games/ffl"
 HEADERS = {
     "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) Safari/537.36"
@@ -76,6 +77,27 @@ RECEPTION_TO_TYPE = {0.0: "standard", 0.5: "half_ppr", 1.0: "ppr"}
 
 class EspnError(RuntimeError):
     pass
+
+
+def read_auth(path: Path = AUTH_FILE) -> dict[str, str]:
+    """Parse the gitignored `auth` file into a dict. Missing file is fine."""
+    if not path.exists():
+        return {}
+    values = {}
+    for line in path.read_text().splitlines():
+        line = line.strip()
+        if not line or line.startswith("#") or "=" not in line:
+            continue
+        key, _, val = line.partition("=")
+        val = val.strip().strip("\'\"")
+        if val:
+            values[key.strip()] = val
+    return values
+
+
+def setting(name: str, flag: str | None, auth: dict[str, str]) -> str | None:
+    """CLI flag beats environment, which beats the auth file."""
+    return flag or os.environ.get(name) or auth.get(name)
 
 
 def fetch(league_id: str, season: int, espn_s2: str | None, swid: str | None) -> dict:
@@ -174,10 +196,20 @@ def map_settings(payload: dict, season: int) -> dict[str, Any]:
     }
 
 
-def my_slot(mapped: dict, payload: dict, swid: str | None) -> int | None:
-    """Find the user's draft position, if their team can be identified."""
+def my_slot(
+    mapped: dict, payload: dict, swid: str | None, team_id: int | None = None
+) -> int | None:
+    """Find the user's draft position, if their team can be identified.
+
+    An explicit team id is used directly; otherwise the SWID is matched
+    against each team's owner list.
+    """
     order = mapped["draft"].get("pick_order") or []
-    if not (swid and order):
+    if not order:
+        return None
+    if team_id is not None and team_id in order:
+        return order.index(team_id) + 1
+    if not swid:
         return None
     target = swid.strip("{}").lower()
     for team in payload.get("teams", []):
@@ -225,17 +257,33 @@ def compare(mapped: dict, slot: int | None) -> list[tuple[str, Any, Any, bool]]:
 def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__,
                                  formatter_class=argparse.RawDescriptionHelpFormatter)
-    ap.add_argument("--league-id", required=True, help="leagueId from your ESPN URL")
+    ap.add_argument("--league-id", help="leagueId from your ESPN URL")
+    ap.add_argument("--team-id", type=int, help="your teamId, to resolve draft slot")
     ap.add_argument("--season", type=int, default=SEASON)
-    ap.add_argument("--espn-s2", default=os.environ.get("ESPN_S2"))
-    ap.add_argument("--swid", default=os.environ.get("ESPN_SWID"))
+    ap.add_argument("--espn-s2")
+    ap.add_argument("--swid")
     ap.add_argument("--write", action="store_true",
                     help="save ESPN values to league.espn.yaml for review")
     ap.add_argument("--raw", action="store_true", help="dump the raw ESPN payload")
     args = ap.parse_args()
 
+    auth = read_auth()
+    espn_s2 = setting("ESPN_S2", args.espn_s2, auth)
+    swid = setting("ESPN_SWID", args.swid, auth)
+    league_id = setting("ESPN_LEAGUE_ID", args.league_id, auth)
+    team_raw = setting("ESPN_TEAM_ID", str(args.team_id) if args.team_id else None, auth)
+    team_id = int(team_raw) if team_raw else None
+
+    if not league_id:
+        print("error: no league id. Pass --league-id or set ESPN_LEAGUE_ID in "
+              "the auth file.", file=sys.stderr)
+        return 1
+    if swid and not espn_s2:
+        print("warning: SWID is set but ESPN_S2 is empty — private leagues need "
+              "both. Trying anyway.\n", file=sys.stderr)
+
     try:
-        payload = fetch(args.league_id, args.season, args.espn_s2, args.swid)
+        payload = fetch(league_id, args.season, espn_s2, swid)
     except EspnError as exc:
         print(f"error: {exc}", file=sys.stderr)
         return 1
@@ -245,10 +293,10 @@ def main() -> int:
         return 0
 
     mapped = map_settings(payload, args.season)
-    slot = my_slot(mapped, payload, args.swid)
+    slot = my_slot(mapped, payload, swid, team_id)
 
     name = mapped["league"]["name"] or "(unnamed)"
-    print(f"ESPN league {args.league_id} — {name} ({args.season})\n")
+    print(f"ESPN league {league_id} — {name} ({args.season})\n")
 
     rows = compare(mapped, slot)
     width = max(len(r[0]) for r in rows)
@@ -260,8 +308,8 @@ def main() -> int:
         print(f"{label.ljust(width)}  {str(current):>12}  {str(shown):>12}{flag}")
 
     if slot is None:
-        print("\nnote: could not identify your draft slot — pass --swid so your "
-              "team can be matched against the draft order.")
+        print("\nnote: could not identify your draft slot — set ESPN_TEAM_ID in "
+              "the auth file, or the draft order may not be set yet.")
     if mapped["_unmapped_slots"]:
         print(f"\nnote: unmapped lineup slots (ESPN slot id -> count): "
               f"{mapped['_unmapped_slots']}")

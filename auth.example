@@ -1,0 +1,23 @@
+# ESPN credentials — copy to `auth` and fill in. `auth` is gitignored.
+#
+# These are live session cookies for your ESPN (Disney) account, not just for
+# fantasy. Treat them like a password: don't commit them, don't paste them
+# into chats or issues. ESPN has no username/password API — its login is
+# reCAPTCHA-gated — so these cookies are the only way in for a private league.
+#
+# Where to find them:
+#   1. Log in to ESPN in your browser
+#   2. DevTools -> Application -> Cookies -> https://www.espn.com
+#   3. Copy the values for `espn_s2` and `SWID`
+#
+# espn_s2 lasts roughly a year, so this is a one-time setup per season.
+
+# Long URL-encoded string, typically 300+ characters.
+ESPN_S2=AEB...replace...me
+
+# GUID including the braces.
+ESPN_SWID={00000000-0000-0000-0000-000000000000}
+
+# From your league URL: .../football/team?leagueId=<this>&teamId=<this>
+ESPN_LEAGUE_ID=123456
+ESPN_TEAM_ID=1

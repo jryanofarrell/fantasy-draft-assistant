@@ -10,3 +10,6 @@ venv/
 # Projection data and scrape caches — regenerate with download_projections.py
 data/
 league.espn.yaml
+
+# ESPN cookies — never commit
+auth

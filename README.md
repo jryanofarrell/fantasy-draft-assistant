@@ -42,22 +42,31 @@ eligible positions, and so on.
 
 ### Importing from ESPN
 
-Rather than hand-checking the settings, pull them from the league directly:
+Rather than hand-checking settings, pull them from the league directly:
 
 ```bash
-export ESPN_S2='...' ESPN_SWID='{...}'      # private leagues only
-python import_espn_league.py --league-id 123456
+cp auth.example auth      # then fill in your cookies
+python import_espn_league.py
 ```
 
-`--league-id` is the `leagueId` in your ESPN URL. The script prints ESPN's
-settings beside the current `league.yaml` and marks every field that differs.
-It does not modify `league.yaml`; `--write` saves the ESPN values to
-`league.espn.yaml` for you to review and merge.
+The script prints ESPN's settings beside the current `league.yaml` and marks
+every field that differs. It does not modify `league.yaml`; `--write` saves the
+ESPN values to `league.espn.yaml` for you to review and merge.
 
-Private leagues need the `espn_s2` and `SWID` cookies from a logged-in browser
-session (DevTools → Application → Cookies → espn.com). Prefer the environment
-variables over `--espn-s2` / `--swid` flags so the cookies don't land in your
-shell history. They are credentials — don't commit them.
+`auth` holds your league id, team id, and ESPN cookies. It is gitignored;
+`auth.example` is the committed template. Values can also come from the
+environment or `--league-id` / `--espn-s2` / `--swid` flags, which take
+precedence over the file.
+
+**Getting the cookies.** ESPN has no username/password API — its login is
+reCAPTCHA-gated — so a private league needs two cookies from a logged-in
+browser session. DevTools → Application → Cookies → `https://www.espn.com`,
+then copy `espn_s2` (long string) and `SWID` (a GUID in braces). `espn_s2`
+lasts about a year, so this is a one-time setup per season. Public leagues
+need no cookies at all.
+
+These are live session credentials for your whole ESPN/Disney account, not
+just fantasy. Keep them in `auth`, and don't paste them into chats or issues.
 
 Scoring rules ESPN reports that aren't modelled in `league.yaml` are listed
 rather than silently dropped, so you can see what wasn't carried across.
@@ -80,7 +89,7 @@ them yourself.
 | `combine_data_beersheets.py` | Merges the per-position sheets into `FULL-Table 1.csv`, adding an `AVG Differential` column (points above the average league starter at that position). |
 | `download_data_nfl_data.py` | Scratch script — dumps `nfl_data_py` seasonal data. |
 | `league.py` | Loads and validates `league.yaml`. Run directly to print the active league. |
-| `import_espn_league.py` | Pulls live settings from ESPN and diffs them against `league.yaml`. |
+| `import_espn_league.py` | Pulls live settings from ESPN and diffs them against `league.yaml`. Reads `auth`. |
 | `config.py` | Bridges `league.yaml` to the scripts and resolves data paths. |
 
 ### How the assistant ranks
