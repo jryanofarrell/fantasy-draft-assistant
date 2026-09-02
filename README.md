@@ -9,17 +9,44 @@ Used for the 2025 draft; refreshed with CBS projections for 2026.
 
 ## League settings
 
-Configured in `config.py`:
+All league settings live in **`league.yaml`**, which mirrors what you can
+change in ESPN (League Settings → Basic / Roster / Scoring). Edit that file
+rather than the scripts.
 
 | Setting | Value |
 | --- | --- |
+| Season | 2026 |
 | League size | 12 teams |
 | Draft slot | 12 |
+| Scoring | half PPR (0.5 pts/reception) |
 | Starters | QB 1, RB 2, WR 2, TE 1, FLEX 2 |
 | Flex eligible | RB / WR / TE |
 | Bench | 5 |
-| Projection column | `AVG` |
-| Season | 2026 |
+
+Print the loaded config at any time:
+
+```bash
+python league.py
+```
+
+The loader validates on load and refuses to run on a config that would
+silently produce a wrong draft board — a `scoring_type` that disagrees with
+the per-reception value, a draft slot outside the league, a FLEX slot with no
+eligible positions, and so on.
+
+> ⚠️ **Verify against ESPN before drafting.** Fields in `league.yaml` marked
+> `[carried over]` came from last season's hardcoded script; `[ESPN default]`
+> fields are guesses. In particular ESPN defaults to FLEX 1, a K and a D/ST
+> slot, and a 7-man bench — this config carries last year's FLEX 2, no K or
+> D/ST, and a 5-man bench.
+
+### Kickers and defenses
+
+`league.yaml` records K and D/ST slots and their scoring so the file is a
+complete picture of the league, but the assistant does not rank them — there
+are no projections for those positions in the data. If you set those slots to
+a non-zero count, the tool excludes them from its roster math and you draft
+them yourself.
 
 ## Scripts
 
@@ -30,7 +57,8 @@ Configured in `config.py`:
 | `chat_gpt_fantasy_rankings.py` | Standalone flex-aware VOR rankings; writes `data/<season>/rankings_vor_flexaware.csv`. |
 | `combine_data_beersheets.py` | Merges the per-position sheets into `FULL-Table 1.csv`, adding an `AVG Differential` column (points above the average league starter at that position). |
 | `download_data_nfl_data.py` | Scratch script — dumps `nfl_data_py` seasonal data. |
-| `config.py` | Season, league settings, and data paths shared by all of the above. |
+| `league.py` | Loads and validates `league.yaml`. Run directly to print the active league. |
+| `config.py` | Bridges `league.yaml` to the scripts and resolves data paths. |
 
 ### How the assistant ranks
 
@@ -63,6 +91,15 @@ data/2026/
 Each sheet carries `Player`, `Team`, `Position`, `AVG` (CBS projected season
 PPR points) and the underlying stat columns. `AVG` is what every downstream
 script ranks on.
+
+### Scoring mismatch
+
+⚠️ The sheets are currently CBS's **full PPR** projections, but the league is
+**half PPR**. Receiving-heavy players are therefore overvalued relative to
+their real value in this league. CBS only publishes `ppr` and `nonppr`
+endpoints — no half-PPR — and the two do not differ by receptions alone, so
+half-PPR numbers have to be computed from the projected stat lines using the
+scoring rules in `league.yaml`. **This is not done yet.**
 
 ### Source note
 

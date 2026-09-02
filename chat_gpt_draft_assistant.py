@@ -2,8 +2,11 @@
 import pandas as pd
 import numpy as np
 
+import league
+
 from config import (
     BENCH_SLOTS,
+    LEAGUE,
     FLEX_ELIGIBLE,
     LEAGUE_SIZE,
     MY_SLOT,
@@ -240,8 +243,11 @@ def main():
         print(f"  {p}: base={base}, replacementAVG={rep_val[p]:.2f}")
     print()
 
+    print(league.summary(LEAGUE))
+    print()
+
     pick = 1
-    total_my_picks_allowed = 8 + BENCH_SLOTS
+    total_my_picks_allowed = LEAGUE.drafted_roster_size
 
     if HAVE_PT:
         base_completer = WordCompleter(remaining_display(available))
@@ -256,7 +262,11 @@ def main():
             break
 
         if len(my_roster) >= total_my_picks_allowed:
-            print("\n✅ You filled 13 roster spots (8 starters + 5 bench). Draft assistant done.")
+            starters = sum(ROSTER_SLOTS.values())
+            print(
+                f"\n✅ You filled {total_my_picks_allowed} roster spots "
+                f"({starters} starters + {BENCH_SLOTS} bench). Draft assistant done."
+            )
             break
 
         team = pick_to_team(pick, LEAGUE_SIZE)
