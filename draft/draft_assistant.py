@@ -482,10 +482,7 @@ def show_board(available, my_roster, current_pick, next_pick, on_clock=False,
             HISTORY, LEAGUE_SIZE, current_pick, next_pick, POINTS_COL)
         if not panel.empty:
             print()
-            label = (f"cost of waiting from #{current_pick} to #{next_pick}"
-                     if on_clock else
-                     f"at your pick #{current_pick}, cost of waiting to "
-                     f"#{next_pick} (board projected forward)")
+            label = "top available at every position"
             print(indent(label))
             print(indent(table_mod.render(panel)))
     print()
