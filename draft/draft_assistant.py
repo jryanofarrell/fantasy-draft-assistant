@@ -362,14 +362,14 @@ def run_live(args):
     try:
         while True:
             state = draft.state()
-            for entry in draft.new_picks(state):
+            fresh = draft.new_picks(state)
+            for entry in fresh:
                 mine = (entry.get("team_id") == my_team_id
                         if my_team_id is not None
                         else entry["overall"] in my_schedule)
                 available, my_roster, row = apply_pick(
                     available, my_roster, entry, mine)
                 marker = ">>> YOU" if mine else "        "
-                extra = ""
                 if row is not None:
                     extra = f"  [{row[POINTS_COL]:.1f} pts, VOR {row['VOR']:.1f}]"
                 elif entry["position"] in {"K", "D/ST", "DEF"}:
@@ -377,18 +377,11 @@ def run_live(args):
                 else:
                     extra = "  [not on board]"
                 print(f"{marker} {live_mod.format_pick(entry)}{extra}", flush=True)
-                upcoming = [p for p in my_schedule if p > entry["overall"]]
-                nxt = upcoming[0] if upcoming else None
-                following = upcoming[1] if len(upcoming) > 1 else None
-                if nxt is not None:
-                    show_board(available, my_roster, nxt, following)
-                shown_for = None
 
             if state["complete"]:
                 print("\ndraft complete")
                 break
 
-            # On the clock: show the board once, then wait for the pick to land.
             # Raw provider picks use their own key names; only the normalised
             # dicts from new_picks() carry "overall".
             made = {
@@ -398,14 +391,23 @@ def run_live(args):
             }
             made.discard(None)
             next_overall = (max(made) + 1) if made else 1
-            if next_overall in my_schedule and shown_for != next_overall:
-                shown_for = next_overall
+            on_clock = next_overall in my_schedule
+
+            # The board only changes when a pick lands, so recompute once per
+            # batch rather than once per pick — reconnecting mid-draft would
+            # otherwise rebuild it for every pick already made — and not at
+            # all on polls that found nothing.
+            if fresh or (on_clock and shown_for != next_overall):
                 upcoming = [p for p in my_schedule if p >= next_overall]
+                current = upcoming[0] if upcoming else None
                 following = upcoming[1] if len(upcoming) > 1 else None
-                show_board(available, my_roster, next_overall, following,
-                           on_clock=True)
-                print(f"\n>>> YOU ARE ON THE CLOCK (pick {next_overall}) — "
-                      f"draft in {args.provider}; this will pick it up.\n")
+                if current is not None:
+                    show_board(available, my_roster, current, following,
+                               on_clock=on_clock)
+                if on_clock:
+                    shown_for = next_overall
+                    print(f"\n>>> YOU ARE ON THE CLOCK (pick {next_overall}) — "
+                          f"draft in {args.provider}; this will pick it up.\n")
 
             time.sleep(args.interval)
     except KeyboardInterrupt:
