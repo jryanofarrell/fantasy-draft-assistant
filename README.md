@@ -120,6 +120,7 @@ that and use whatever interpreter you invoked it with.
 | `./run.py history` | Positional draft tendencies from the league's own past drafts. Refreshes the VONA cache. |
 | `./run.py draft --live` | Follows a real draft: absorbs every pick automatically, and shows the board when you're on the clock. Nothing to type. |
 | `./run.py live` | Bare pick feed, no board. Same connection flags. |
+| `./run.py simulate --picks 30` | Dry-run against the real board to preview the live display. Other teams are modelled from league history — a rehearsal, not a forecast. |
 
 Run `./run.py` with no arguments for the command list.
 

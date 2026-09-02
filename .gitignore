@@ -16,3 +16,6 @@ auth
 
 # Cached from ESPN by ./run.py history
 league/draft_history.json
+
+# Simulation output
+sim*.txt

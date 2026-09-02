@@ -49,6 +49,7 @@ COMMANDS = {
     "espn": ("league.import_espn_league", "Diff league.yaml against ESPN"),
     "history": ("league.draft_history", "Positional tendencies from past drafts"),
     "live": ("draft.live", "Follow a live draft and print picks as they land"),
+    "simulate": ("draft.simulate", "Dry-run a draft to preview the live display"),
 }
 
 
