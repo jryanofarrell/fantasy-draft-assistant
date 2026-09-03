@@ -3,8 +3,9 @@
 // @namespace    fantasy-draft-assistant
 // @version      0.1
 // @description  Capture the ESPN draft room's own traffic so a local tool can follow the draft. ESPN's read API does not publish picks while a draft runs; the draft room gets them over its own connection, which only exists inside the browser.
-// @match        https://fantasy.espn.com/football/draft*
-// @match        https://fantasy.espn.com/football/*draft*
+// @match        https://fantasy.espn.com/*
+// @match        https://*.espn.com/football/draft*
+// @match        https://*.espn.com/football/waitingroom*
 // @run-at       document-start
 // @grant        none
 // ==/UserScript==
@@ -88,5 +89,24 @@
     return byChannel;
   };
 
-  console.log("[capture] armed. Draft as normal, then run: captureSummary()  /  copyCapture()");
+  // A banner, because "is this thing on?" is the first question and the
+  // console is busy. Removed once picks start arriving.
+  const banner = () => {
+    if (!document.body) return setTimeout(banner, 50);
+    const el = document.createElement("div");
+    el.id = "draft-capture-banner";
+    el.textContent = "capture armed — 0 msgs";
+    el.style.cssText = "position:fixed;bottom:8px;left:8px;z-index:2147483647;" +
+      "background:#0a7;color:#fff;font:12px/1.4 monospace;padding:4px 8px;" +
+      "border-radius:4px;opacity:.9;pointer-events:none";
+    document.body.appendChild(el);
+    setInterval(() => {
+      el.textContent = `capture armed — ${log.length} msgs`;
+      el.style.background = log.length ? "#0a7" : "#a70";
+    }, 1000);
+  };
+  banner();
+
+  console.log("[capture] armed on", location.href,
+              "— draft as normal, then run: captureSummary() / copyCapture()");
 })();
