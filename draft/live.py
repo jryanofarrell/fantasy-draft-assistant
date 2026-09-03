@@ -188,19 +188,62 @@ class SleeperDraft:
 
 
 class LocalDraft:
-    """Reads picks the browser bridge has written to disk.
+    """Picks captured from the draft room by the browser bridge.
 
-    Same interface as the remote providers, so the assistant does not care
-    where a pick came from.
+    ESPN's draft room speaks its own line protocol over a socket that only
+    exists in the browser, and publishes nothing to the read API until the
+    draft ends. The userscript forwards the picks; this resolves the ids in
+    them against ESPN's player index and the league's team names, so the
+    assistant sees the same shape it gets from any other provider.
     """
 
-    def __init__(self, feed: str | None = None):
+    def __init__(self, feed: str | None = None, season: int = SEASON):
         from config import REPO_ROOT
         self.path = Path(feed) if feed else REPO_ROOT / "bridge" / "feed.json"
+        self.season = season
         self._seen: set[int] = set()
+        self._players: dict[int, tuple[str, str]] = {}
+        self._teams: dict[int, str] = {}
+        self._league_id: str | None = None
+
+    def _cookies(self) -> dict:
+        auth = espn_api.read_auth()
+        return {"espn_s2": auth.get("ESPN_S2", ""),
+                "SWID": auth.get("ESPN_SWID", "")}
 
     def prefetch(self) -> None:
-        pass
+        """Load ESPN's player index once, so picks resolve instantly."""
+        if self._players:
+            return
+        resp = requests.get(
+            f"{espn_api.BASE}/seasons/{self.season}/players",
+            headers={**espn_api.HEADERS,
+                     "x-fantasy-filter": '{"players":{"limit":8000}}'},
+            cookies=self._cookies(), params=[("view", "players_wl")], timeout=60)
+        resp.raise_for_status()
+        self._players = {
+            p["id"]: (p.get("fullName", ""),
+                      ESPN_POSITIONS.get(p.get("defaultPositionId"), "?"))
+            for p in resp.json()
+        }
+
+    def _load_teams(self, league_id: str) -> None:
+        if self._teams or not league_id:
+            return
+        try:
+            payload = requests.get(
+                f"{espn_api.BASE}/seasons/{self.season}/segments/0/leagues/{league_id}",
+                headers=espn_api.HEADERS, cookies=self._cookies(),
+                params=[("view", "mTeam")], timeout=30).json()
+            self._teams = {t["id"]: (t.get("name") or f"Team {t['id']}").strip()
+                           for t in payload.get("teams", [])}
+        except Exception:
+            self._teams = {}
+
+    def my_team_id(self) -> int | None:
+        auth = espn_api.read_auth()
+        team_id = auth.get("ESPN_TEAM_ID")
+        return int(team_id) if team_id else None
 
     def state(self) -> dict:
         if not self.path.exists():
@@ -210,25 +253,33 @@ class LocalDraft:
             data = json.loads(self.path.read_text() or "{}")
         except json.JSONDecodeError:
             data = {}
+        league_id = data.get("leagueId")
+        if league_id and league_id != self._league_id:
+            self._league_id = league_id
+            self._load_teams(league_id)
         picks = data.get("picks", [])
         return {"in_progress": bool(picks), "complete": bool(data.get("complete")),
-                "picks": picks, "teams": data.get("teams", {}), "teams_raw": []}
+                "picks": picks, "teams": dict(self._teams), "teams_raw": []}
 
     def new_picks(self, state: dict | None = None) -> list[dict]:
         state = state if state is not None else self.state()
+        self.prefetch()
+        teams_size = max(len(self._teams), 1)
         out = []
         for pick in state["picks"]:
-            overall = pick.get("overall") or pick.get("overallPickNumber")
+            overall = pick.get("overall")
             if overall is None or overall in self._seen:
                 continue
             self._seen.add(overall)
+            name, position = self._players.get(pick.get("player_id"), ("?", "?"))
             out.append({
                 "overall": overall,
-                "round": pick.get("round"),
-                "team": pick.get("team", ""),
+                "round": (overall - 1) // teams_size + 1,
+                "team": self._teams.get(pick.get("team_id"),
+                                        f"Team {pick.get('team_id')}"),
                 "team_id": pick.get("team_id"),
-                "player": pick.get("player", ""),
-                "position": pick.get("position", "?"),
+                "player": name,
+                "position": position,
             })
         return sorted(out, key=lambda p: p["overall"])
 
@@ -236,7 +287,7 @@ class LocalDraft:
 def connect(provider: str, league_id: str | None, draft_id: str | None,
             season: int = SEASON):
     if provider == "local":
-        return LocalDraft(league_id)
+        return LocalDraft(league_id, season)
     if provider == "sleeper":
         if not draft_id:
             raise SystemExit("sleeper needs --draft-id")

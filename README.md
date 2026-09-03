@@ -121,6 +121,7 @@ that and use whatever interpreter you invoked it with.
 | `./run.py draft --live` | Follows a real draft: absorbs every pick automatically, and shows the board when you're on the clock. Nothing to type. |
 | `./run.py live` | Bare pick feed, no board. Same connection flags. |
 | `./run.py simulate --picks 30` | Dry-run against the real board to preview the live display. Other teams are modelled from league history — a rehearsal, not a forecast. |
+| `./run.py bridge` | Receives picks from the browser userscript. See below. |
 
 Run `./run.py` with no arguments for the command list.
 
@@ -323,3 +324,35 @@ Other flags: `--interval` (default 5s), `--provider sleeper --draft-id N`,
 Type each pick yourself. At each one: press Enter to take the top suggestion or
 type `Name (POS)`; for another team type what they took, or `auto` to assume
 the best available by VOR. `quit` to stop early.
+
+## Following an ESPN draft live
+
+ESPN publishes nothing to its read API while a draft is running — verified
+against a real league draft mid-draft, which reported zero picks and zero
+rostered players. Only once a draft finishes does it appear. This is why
+FantasyPros ships a browser extension rather than reading an endpoint.
+
+The picks do exist, in the draft room, on a socket that only lives in the
+browser. `bridge/espn-capture.user.js` reads them there and forwards them:
+
+1. Install Tampermonkey, add `bridge/espn-capture.user.js`. Chrome needs
+   **Developer mode** on at `chrome://extensions` or Tampermonkey injects
+   nothing.
+2. `./run.py bridge` in one terminal.
+3. `./run.py draft --live --provider local` in another.
+4. Open the draft room. A badge top-right shows picks captured.
+
+The room speaks a small line protocol on its own socket:
+
+```
+SELECTED <teamId> <playerId> <lineupSlotId>    a pick
+SELECTING <teamId> <ms>                        someone is on the clock
+CLOCK / AUTOSUGGEST / PING / PONG              not picks
+```
+
+Only `SELECTED` matters. The userscript forwards ids and nothing else; names,
+positions and team names are resolved locally against ESPN's player index,
+so the browser side stays trivial and survives ESPN restyling their UI.
+
+If any of this fails on draft day, `./run.py draft` takes picks typed by
+hand and shows the identical board.

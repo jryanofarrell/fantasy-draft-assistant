@@ -17,7 +17,47 @@
   const log = [];
   window.__draftCapture = log;
 
+  // The draft room speaks a small line protocol over its own socket:
+  //   SELECTED <teamId> <playerId> <lineupSlotId>   a pick was made
+  //   SELECTING <teamId> <ms>                       someone is on the clock
+  //   CLOCK / AUTOSUGGEST / PING / PONG             not picks
+  // Only SELECTED matters. Player and team names are resolved locally, where
+  // the assistant already has ESPN's player index.
+  const BRIDGE = "http://127.0.0.1:8787/";
+  const picks = [];
+  const seen = new Set();
+  let leagueId = (location.search.match(/leagueId=(\d+)/) || [])[1] || null;
+
+  const post = () => {
+    fetch(BRIDGE, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ leagueId, picks }),
+    }).catch(() => {
+      console.warn("[capture] bridge unreachable — is ./run.py bridge running?");
+    });
+  };
+
+  const parse = (text) => {
+    String(text).split("\n").forEach((line) => {
+      const m = line.trim().match(/^SELECTED\s+(\d+)\s+(\d+)\s+(\d+)/);
+      if (!m) return;
+      const key = m[1] + ":" + m[2];
+      if (seen.has(key)) return;
+      seen.add(key);
+      picks.push({
+        overall: picks.length + 1,
+        team_id: Number(m[1]),
+        player_id: Number(m[2]),
+        slot_id: Number(m[3]),
+      });
+      console.log(`[capture] pick ${picks.length}: team ${m[1]} -> player ${m[2]}`);
+      post();
+    });
+  };
+
   const note = (channel, url, payload) => {
+    if (channel === "ws") parse(payload);
     let text = payload;
     if (typeof text !== "string") {
       try { text = JSON.stringify(text); } catch (e) { text = String(text); }
@@ -79,6 +119,9 @@
     else console.log(text);
     return slice.length;
   };
+  window.capturePicks = function () { console.table(picks); return picks; };
+  window.captureResend = function () { post(); return picks.length; };
+
   window.captureSummary = function () {
     const byChannel = {};
     log.forEach((m) => {
@@ -102,8 +145,8 @@
       "border-radius:4px;opacity:.9;pointer-events:none";
     document.body.appendChild(el);
     setInterval(() => {
-      el.textContent = `capture armed — ${log.length} msgs`;
-      el.style.background = log.length ? "#0a7" : "#a70";
+      el.textContent = `capture — ${picks.length} picks / ${log.length} msgs`;
+      el.style.background = picks.length ? "#0a7" : "#a70";
     }, 1000);
   };
   banner();
