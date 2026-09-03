@@ -6,6 +6,7 @@ import pandas as pd
 import numpy as np
 
 from league import draft_history, league
+from draft import board as board_mod
 from draft import live as live_mod
 from draft import table as table_mod
 from draft import vona as vona_mod
@@ -24,64 +25,8 @@ from config import (
     position_file,
 )
 
-# ===== Load & clean =====
-dfs = {}
-for pos in POSITIONS:
-    fp = position_file(pos, SEASON)
-    df = pd.read_csv(fp, na_values=["NaN", "nan", "", " ", "Â", "Â\xa0"], keep_default_na=True)
-    df = df.dropna(subset=["Player"]).copy()
-    df["Player"] = df["Player"].astype(str).str.strip()
-    # robust numeric coercion for AVG
-    df[POINTS_COL] = (
-        df[POINTS_COL].astype(str)
-        .str.replace(",", "", regex=False)
-        .str.replace(r"[^\d\.\-]", "", regex=True)
-        .replace({"": np.nan})
-    )
-    df[POINTS_COL] = pd.to_numeric(df[POINTS_COL], errors="coerce")
-    df = df.dropna(subset=[POINTS_COL]).sort_values(POINTS_COL, ascending=False).reset_index(drop=True)
-    df["Position"] = pos
-    dfs[pos] = df
-
-def compute_replacements(dfs, league_size, roster_slots, flex_eligible):
-    # base starters (no flex)
-    base_needed = {p: league_size * roster_slots.get(p, 0) for p in dfs.keys()}
-    rep_idx = {}
-    for p, d in dfs.items():
-        want = base_needed.get(p, 0)
-        idx = want - 1
-        if len(d) == 0:
-            idx = -1
-        else:
-            idx = max(-1, min(idx, len(d) - 1))
-        rep_idx[p] = idx
-
-    # allocate FLEX slots greedily to next-best eligible players
-    flex_to_fill = league_size * roster_slots.get("FLEX", 0)
-    flex_taken = {p: 0 for p in dfs.keys()}
-    for _ in range(flex_to_fill):
-        candidates = []
-        for p in flex_eligible:
-            d = dfs.get(p)
-            if d is None or d.empty:
-                continue
-            next_i = rep_idx[p] + 1
-            if next_i < len(d):
-                candidates.append((p, d.iloc[next_i][POINTS_COL]))
-        if not candidates:
-            break
-        best_pos, _ = max(candidates, key=lambda t: t[1])
-        rep_idx[best_pos] += 1
-        flex_taken[best_pos] += 1
-
-    rep_val = {}
-    for p, d in dfs.items():
-        idx = rep_idx[p]
-        val = float(d.iloc[idx][POINTS_COL]) if (idx >= 0 and len(d)) else -np.inf
-        rep_val[p] = val
-    return rep_val, rep_idx, flex_taken
-
-rep_val, rep_idx, flex_taken = compute_replacements(dfs, LEAGUE_SIZE, ROSTER_SLOTS, FLEX_ELIGIBLE)
+# ===== Board =====
+ranked_overall, dfs, rep_val, rep_idx, flex_taken = board_mod.build()
 
 # Positional tendencies from this league's own past drafts, used for VONA.
 HISTORY = draft_history.load()
@@ -93,21 +38,6 @@ DRAFTED_STARTERS = sum(ROSTER_SLOTS.values())
 # reorders players but never lifts one past dozens of higher-VOR peers, so a
 # deep pool costs time without changing the board.
 CANDIDATE_POOL = 50
-
-# ===== Build VOR pool =====
-frames = []
-for pos, d in dfs.items():
-    out = d.copy()
-    out["ReplacementAVG"] = rep_val[pos]
-    out["VOR"] = out[POINTS_COL] - out["ReplacementAVG"]
-    frames.append(out)
-
-ranked_overall = pd.concat(frames, ignore_index=True)
-for col in [POINTS_COL, "VOR", "ReplacementAVG"]:
-    ranked_overall[col] = pd.to_numeric(ranked_overall[col], errors="coerce")
-
-ranked_overall = ranked_overall.sort_values(["VOR", POINTS_COL], ascending=[False, False]).reset_index(drop=True)
-ranked_overall["Key"] = (ranked_overall["Player"].str.strip() + " (" + ranked_overall["Position"] + ")").str.lower()
 
 # ===== Replacement "ghost" lineup (baseline for marginal gain) =====
 def build_replacement_skeleton(rep_val: dict, pool_cols: list[str]) -> pd.DataFrame:
@@ -153,11 +83,6 @@ except Exception:
 def remaining_display(df):
     return (df["Player"] + " (" + df["Position"] + ")").tolist()
 
-def pick_to_team(pick: int, teams: int) -> int:
-    rnd = (pick - 1) // teams + 1
-    pos = (pick - 1) % teams + 1
-    return pos if rnd % 2 == 1 else teams - pos + 1
-
 def best_starting_lineup_indices(roster_df: pd.DataFrame):
     work = roster_df.copy()
     work[POINTS_COL] = pd.to_numeric(work[POINTS_COL], errors="coerce")
@@ -173,8 +98,9 @@ def best_starting_lineup_indices(roster_df: pd.DataFrame):
             return []
         return sub.nlargest(k, POINTS_COL).index.tolist()
 
-    # Fill core slots
-    for pos, k in [("QB", 1), ("RB", 2), ("WR", 2), ("TE", 1)]:
+    # Core slots come from league.yaml like everything else; a literal here
+    # would silently mis-score marginal gain the moment the roster changes.
+    for pos, k in [(p, ROSTER_SLOTS.get(p, 0)) for p in POSITIONS]:
         idxs = pick_top_indices(work.drop(index=list(chosen), errors="ignore"), pos, k)
         chosen.update(idxs)
 
@@ -289,8 +215,7 @@ def parse_args(argv=None):
     return ap.parse_args(argv)
 
 
-def window_for(on_clock_pick: int, my_next: int, schedule: list[int],
-               is_mine: bool) -> tuple[int, int]:
+def window_for(my_next: int, schedule: list[int]) -> tuple[int, int]:
     """The stretch of picks VONA prices: your pick to your next one.
 
     Always your own window, whoever is currently on the clock. The question
@@ -362,9 +287,28 @@ def run_live(args):
                       f"{my_schedule[:3]}), but this draft gives you "
                       f"{owned[:3]} — using the draft.")
             my_schedule = owned
+        else:
+            # No pick slots published yet, so the draft order cannot be
+            # checked; roster attribution still keys off team id and is safe.
+            print(f"  ! draft order not published yet — using slot {MY_SLOT} "
+                  f"from league.yaml; verify your first pick lands where "
+                  f"expected")
     print(f"  Your picks: {', '.join(str(p) for p in my_schedule[:6])}...")
     print(f"\nPolling every {args.interval}s. Draft in your provider as normal; "
           f"Ctrl-C to stop.\n")
+
+    # Absorb anything already drafted before drawing the opening board. On a
+    # restart mid-draft the board would otherwise show drafted players as
+    # available, and your own roster as empty, until the next poll.
+    for entry in draft.new_picks(state0):
+        was_mine = (entry.get("team_id") == my_team_id
+                    if my_team_id is not None
+                    else entry["overall"] in my_schedule)
+        available, my_roster, _ = apply_pick(available, my_roster, entry, was_mine)
+        previous = (f"#{entry['overall']} {entry['player']} "
+                    f"[{entry['position']}]{'  <- YOU' if was_mine else ''}")
+    if len(my_roster):
+        print(f"  Resumed mid-draft: {len(my_roster)} of your picks already made")
 
     # Show the opening board straight away. Without this, starting before the
     # draft leaves a blank screen until someone picks.
@@ -378,8 +322,7 @@ def run_live(args):
         print(f"Pick #{start} Round{(start - 1) // LEAGUE_SIZE + 1}"
               f"{' ' + on_the_clock.get(start, '') if on_the_clock.get(start) else ''}"
               f"{'  <<< YOU ARE ON THE CLOCK' if start == opening_next else ''}")
-        lo, hi = window_for(start, opening_next, my_schedule,
-                            start == opening_next)
+        lo, hi = window_for(opening_next, my_schedule)
         show_board(available, my_roster, lo, hi,
                    on_clock=(start == opening_next))
         shown_for = opening_next if start == opening_next else None
@@ -459,8 +402,7 @@ def run_live(args):
                 # survives rather than a player already gone by then.
                 mine_next = next((p for p in my_schedule if p >= next_overall), None)
                 if mine_next is not None:
-                    start, end = window_for(next_overall, mine_next, my_schedule,
-                                            on_clock)
+                    start, end = window_for(mine_next, my_schedule)
                     show_board(available, my_roster, start, end,
                                on_clock=on_clock)
                 if on_clock:
@@ -581,13 +523,13 @@ def main():
             )
             break
 
-        team = pick_to_team(pick, LEAGUE_SIZE)
+        team = vona_mod.pick_to_team(pick, LEAGUE_SIZE)
         me = (team == MY_SLOT)
 
         print(f"\n--- Pick #{pick} --- ")
 
-        start, end = window_for(pick, next((p for p in my_schedule if p >= pick),
-                                           pick), my_schedule, me)
+        start, end = window_for(
+            next((p for p in my_schedule if p >= pick), pick), my_schedule)
         sugg = suggest_top(available, my_roster, k=LEAGUE.suggestions,
                            current_pick=start, next_pick=end)
         if sugg.empty:

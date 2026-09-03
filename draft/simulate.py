@@ -17,6 +17,7 @@ import argparse
 import random
 
 from config import LEAGUE_SIZE, POSITIONS, SEASON
+from draft import vona
 from league.draft_history import rates_for_round
 
 
@@ -66,16 +67,14 @@ class SimulatedDraft:
         pool = left if position is None else left[left["Position"] == position]
         row = pool.iloc[0]
         self.taken.add(row["Player"])
-        seat = (overall - 1) % self.teams
-        team_id = self.order[seat if rnd % 2 == 1 else self.teams - 1 - seat]
+        team_id = self.slot_owner(overall)
         return {"overallPickNumber": overall, "roundId": rnd, "teamId": team_id,
                 "playerId": overall, "player": row["Player"],
                 "position": row["Position"]}
 
     def slot_owner(self, overall: int) -> int:
-        rnd = (overall - 1) // self.teams + 1
-        seat = (overall - 1) % self.teams
-        return self.order[seat if rnd % 2 == 1 else self.teams - 1 - seat]
+        """Which team id owns an overall pick, via the shared snake math."""
+        return self.order[vona.pick_to_team(overall, self.teams) - 1]
 
     def state(self) -> dict:
         pick = True
