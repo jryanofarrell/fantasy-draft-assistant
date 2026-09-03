@@ -58,7 +58,13 @@ class Handler(BaseHTTPRequestHandler):
 
         picks = payload.get("picks", payload if isinstance(payload, list) else [])
         FEED.parent.mkdir(parents=True, exist_ok=True)
-        FEED.write_text(json.dumps({"picks": picks}, indent=1))
+        # Keep the league id: without it the assistant cannot look up team
+        # names, and every pick shows as "Team 7".
+        FEED.write_text(json.dumps({
+            "leagueId": payload.get("leagueId"),
+            "complete": payload.get("complete", False),
+            "picks": picks,
+        }, indent=1))
         print(f"  bridge: {len(picks)} picks", flush=True)
 
         self.send_response(200)
@@ -74,10 +80,25 @@ def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__,
                                  formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--port", type=int, default=DEFAULT_PORT)
+    ap.add_argument("--reset", action="store_true",
+                    help="discard previously captured picks and start clean")
     args = ap.parse_args()
 
     FEED.parent.mkdir(parents=True, exist_ok=True)
-    FEED.write_text(json.dumps({"picks": []}))
+    if args.reset or not FEED.exists():
+        FEED.write_text(json.dumps({"picks": []}))
+    else:
+        # Restarting mid-draft must not discard what has been captured. The
+        # browser re-sends its whole list on the next pick, but until then
+        # the board would show drafted players as still available.
+        try:
+            held = len(json.loads(FEED.read_text()).get("picks", []))
+            if held:
+                print(f"resuming with {held} picks already captured "
+                      f"(--reset to start clean)")
+        except json.JSONDecodeError:
+            FEED.write_text(json.dumps({"picks": []}))
+
     try:
         server = Server(("127.0.0.1", args.port), Handler)
     except OSError as exc:

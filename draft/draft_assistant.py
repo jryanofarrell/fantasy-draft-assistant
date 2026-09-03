@@ -338,14 +338,27 @@ def run_live(args):
                  if pick_team(p) == my_team_id]
         owned = sorted(x for x in owned if x)
         if owned:
-            if owned[:len(my_schedule)] != my_schedule[:len(owned)]:
-                print(f"  ! league.yaml says slot {MY_SLOT} (picks "
-                      f"{my_schedule[:3]}), but this draft gives you "
-                      f"{owned[:3]} — using the draft.")
-            my_schedule = owned
+            # Infer the slot and regenerate, rather than adopting `owned`
+            # wholesale. ESPN's API pre-publishes every slot, but the browser
+            # bridge only reports picks already made — taking that as the
+            # schedule leaves no pick ahead to measure against, and VONA is
+            # zero by definition when there is no next pick.
+            slot = vona_mod.pick_to_team(owned[0], LEAGUE_SIZE)
+            derived = vona_mod.my_picks(slot, LEAGUE_SIZE,
+                                        LEAGUE.drafted_roster_size + 4)
+            if slot != MY_SLOT:
+                print(f"  ! league.yaml says slot {MY_SLOT}, but this draft "
+                      f"gives you slot {slot} — using the draft.")
+            mismatched = [p for p in owned if p not in derived]
+            if mismatched:
+                print(f"  ! picks {mismatched[:3]} don't fit a clean snake from "
+                      f"slot {slot}; keeping the draft's own order.")
+                derived = sorted(set(owned) | set(p for p in derived
+                                                  if p > max(owned)))
+            my_schedule = derived
         else:
-            # No pick slots published yet, so the draft order cannot be
-            # checked; roster attribution still keys off team id and is safe.
+            # No pick slots published, so the order cannot be checked;
+            # roster attribution still keys off team id and is safe.
             print(f"  ! draft order not published yet — using slot {MY_SLOT} "
                   f"from league.yaml; verify your first pick lands where "
                   f"expected")
