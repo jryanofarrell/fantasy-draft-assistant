@@ -22,3 +22,4 @@ sim*.txt
 
 # Simulation preview output
 draft-preview.txt
+bridge/feed.json

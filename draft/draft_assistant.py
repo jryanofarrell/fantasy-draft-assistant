@@ -238,7 +238,8 @@ def parse_args(argv=None):
     ap = argparse.ArgumentParser(description="Interactive snake-draft assistant")
     ap.add_argument("--live", action="store_true",
                     help="follow a real draft instead of typing every pick")
-    ap.add_argument("--provider", choices=["espn", "sleeper"], default="espn")
+    ap.add_argument("--provider", choices=["espn", "sleeper", "local"],
+                    default="espn")
     ap.add_argument("--league-id", help="ESPN league or mock-lobby id")
     ap.add_argument("--draft-id", help="Sleeper draft id")
     ap.add_argument("--interval", type=float, default=5.0,

@@ -18,6 +18,9 @@ import argparse
 import sys
 import time
 
+import json
+from pathlib import Path
+
 import requests
 
 from config import SEASON
@@ -184,8 +187,56 @@ class SleeperDraft:
         return out
 
 
+class LocalDraft:
+    """Reads picks the browser bridge has written to disk.
+
+    Same interface as the remote providers, so the assistant does not care
+    where a pick came from.
+    """
+
+    def __init__(self, feed: str | None = None):
+        from config import REPO_ROOT
+        self.path = Path(feed) if feed else REPO_ROOT / "bridge" / "feed.json"
+        self._seen: set[int] = set()
+
+    def prefetch(self) -> None:
+        pass
+
+    def state(self) -> dict:
+        if not self.path.exists():
+            return {"in_progress": False, "complete": False, "picks": [],
+                    "teams": {}, "teams_raw": []}
+        try:
+            data = json.loads(self.path.read_text() or "{}")
+        except json.JSONDecodeError:
+            data = {}
+        picks = data.get("picks", [])
+        return {"in_progress": bool(picks), "complete": bool(data.get("complete")),
+                "picks": picks, "teams": data.get("teams", {}), "teams_raw": []}
+
+    def new_picks(self, state: dict | None = None) -> list[dict]:
+        state = state if state is not None else self.state()
+        out = []
+        for pick in state["picks"]:
+            overall = pick.get("overall") or pick.get("overallPickNumber")
+            if overall is None or overall in self._seen:
+                continue
+            self._seen.add(overall)
+            out.append({
+                "overall": overall,
+                "round": pick.get("round"),
+                "team": pick.get("team", ""),
+                "team_id": pick.get("team_id"),
+                "player": pick.get("player", ""),
+                "position": pick.get("position", "?"),
+            })
+        return sorted(out, key=lambda p: p["overall"])
+
+
 def connect(provider: str, league_id: str | None, draft_id: str | None,
             season: int = SEASON):
+    if provider == "local":
+        return LocalDraft(league_id)
     if provider == "sleeper":
         if not draft_id:
             raise SystemExit("sleeper needs --draft-id")

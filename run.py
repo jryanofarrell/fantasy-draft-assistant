@@ -50,6 +50,7 @@ COMMANDS = {
     "history": ("league.draft_history", "Positional tendencies from past drafts"),
     "live": ("draft.live", "Follow a live draft and print picks as they land"),
     "simulate": ("draft.simulate", "Dry-run a draft to preview the live display"),
+    "bridge": ("bridge.server", "Receive picks from the browser userscript"),
 }
 
 
