@@ -113,7 +113,8 @@ that and use whatever interpreter you invoked it with.
 | --- | --- |
 | `./run.py projections --season 2026` | Scrapes CBS projections into `data/<season>/`. Run first each season. |
 | `./run.py draft` | The main tool. Interactive snake-draft assistant — tracks every team's picks, recomputes suggestions each pick, prints your final starters + bench. |
-| `./run.py rankings` | Writes `data/<season>/rankings_vor_flexaware.csv`. |
+| `./run.py rankings` | Writes `data/<season>/<scoring>/rankings_vor_flexaware.csv`. |
+| `./run.py export` | Writes the whole board to one ranked CSV — every player, every metric, plus VONA computed separately for each of your picks. |
 | `./run.py combine` | Merges the per-position sheets into `FULL-Table 1.csv` with an `AVG Differential` column. |
 | `./run.py league` | Prints the active league config. |
 | `./run.py espn` | Diffs `league.yaml` against live ESPN settings. `--write` saves them to `league/league.espn.yaml`. |
@@ -198,6 +199,7 @@ default, or `--all-scorings` for all three.
 | `cbs` | none | ~100/pos | all three | Full stat lines. Only PPR and non-PPR pages exist, and they disagree by more than receptions, so PPR is treated as truth and the others derived from it. |
 | `sleeper` | none | ~550 | all three | The only source publishing every format natively. Carries injury status. |
 | `espn` | `auth` | ~400 | league only | Scored server-side under your league's exact rules, so it needs no conversion — and for the same reason exists only for the format you play. |
+| `fftoday` | none | ~50/pos | all three | Published in standard scoring with a reception column, so every format is one conversion away. Shallow, but covers everyone realistically drafted. Also carries bye weeks. |
 | `manual` | — | whatever you drop in | any | Read from `sources/manual/`. See below. |
 
 Pick a subset with `--sources cbs,sleeper`.

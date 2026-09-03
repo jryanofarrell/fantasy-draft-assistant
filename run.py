@@ -43,6 +43,7 @@ def reexec_in_venv() -> None:
 COMMANDS = {
     "draft": ("draft.draft_assistant", "Interactive snake-draft assistant"),
     "rankings": ("draft.fantasy_rankings", "Write flex-aware VOR rankings"),
+    "export": ("draft.export", "Write the whole board to one ranked CSV"),
     "projections": ("players.download_projections", "Download CBS projections"),
     "combine": ("players.combine_data", "Merge sheets into FULL-Table"),
     "league": ("league.league", "Print the active league config"),
