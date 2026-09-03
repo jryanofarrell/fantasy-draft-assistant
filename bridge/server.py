@@ -35,6 +35,10 @@ class Handler(BaseHTTPRequestHandler):
         self.send_header("Access-Control-Allow-Origin", "*")
         self.send_header("Access-Control-Allow-Headers", "Content-Type")
         self.send_header("Access-Control-Allow-Methods", "POST, OPTIONS")
+        # Chrome blocks a public https page from reaching a private address
+        # unless the target opts in. Without this the draft room's POSTs are
+        # refused before they ever arrive.
+        self.send_header("Access-Control-Allow-Private-Network", "true")
 
     def do_OPTIONS(self) -> None:  # noqa: N802 - required by BaseHTTPRequestHandler
         self.send_response(204)

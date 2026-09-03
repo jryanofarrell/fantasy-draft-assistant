@@ -7,15 +7,20 @@
 // @match        https://*.espn.com/football/draft*
 // @match        https://*.espn.com/football/waitingroom*
 // @run-at       document-start
-// @grant        none
+// @grant        GM_xmlhttpRequest
+// @grant        unsafeWindow
 // ==/UserScript==
 
 (function () {
   "use strict";
 
+  // @grant sandboxes this script, so `window` here is a proxy. The socket
+  // belongs to the page, so the hook has to go on the page's own window.
+  const W = (typeof unsafeWindow !== "undefined") ? unsafeWindow : window;
+
   // Everything seen so far, for inspection from the console.
   const log = [];
-  window.__draftCapture = log;
+  W.__draftCapture = log;
 
   // The draft room speaks a small line protocol over its own socket:
   //   SELECTED <teamId> <playerId> <lineupSlotId>   a pick was made
@@ -29,10 +34,21 @@
   let leagueId = (location.search.match(/leagueId=(\d+)/) || [])[1] || null;
 
   const post = () => {
+    const body = JSON.stringify({ leagueId, picks });
+    // GM_xmlhttpRequest bypasses CORS and Chrome's private-network rules,
+    // which otherwise block an https page from reaching 127.0.0.1.
+    if (typeof GM_xmlhttpRequest === "function") {
+      GM_xmlhttpRequest({
+        method: "POST", url: BRIDGE, data: body,
+        headers: { "Content-Type": "application/json" },
+        onerror: () => console.warn("[capture] bridge unreachable — is ./run.py bridge running?"),
+      });
+      return;
+    }
     fetch(BRIDGE, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ leagueId, picks }),
+      body,
     }).catch(() => {
       console.warn("[capture] bridge unreachable — is ./run.py bridge running?");
     });
@@ -71,7 +87,7 @@
   };
 
   // --- websockets: wrapped before the page can open any ---
-  const NativeWS = window.WebSocket;
+  const NativeWS = W.WebSocket;
   function WrappedWS(url, protocols) {
     const ws = protocols === undefined ? new NativeWS(url)
                                        : new NativeWS(url, protocols);
@@ -85,12 +101,12 @@
   ["CONNECTING", "OPEN", "CLOSING", "CLOSED"].forEach((k, i) => {
     WrappedWS[k] = i;
   });
-  window.WebSocket = WrappedWS;
+  W.WebSocket = WrappedWS;
 
   // --- fetch, in case picks arrive over plain HTTP polling instead ---
-  const nativeFetch = window.fetch;
+  const nativeFetch = W.fetch;
   if (nativeFetch) {
-    window.fetch = async function (...args) {
+    W.fetch = async function (...args) {
       const res = await nativeFetch.apply(this, args);
       const url = (args[0] && args[0].url) || args[0];
       if (/draft|pick|roster/i.test(String(url))) {
@@ -101,8 +117,8 @@
   }
 
   // --- XHR, same reason ---
-  const open = XMLHttpRequest.prototype.open;
-  XMLHttpRequest.prototype.open = function (method, url, ...rest) {
+  const open = W.XMLHttpRequest.prototype.open;
+  W.XMLHttpRequest.prototype.open = function (method, url, ...rest) {
     this.addEventListener("load", () => {
       if (/draft|pick|roster/i.test(String(url))) {
         note("xhr", url, this.responseText);
@@ -112,17 +128,17 @@
   };
 
   // --- helpers to get the capture out ---
-  window.copyCapture = function (n) {
+  W.copyCapture = function (n) {
     const slice = log.slice(-(n || 40));
     const text = JSON.stringify(slice, null, 1);
     if (typeof copy === "function") { copy(text); console.log("copied", slice.length, "messages"); }
     else console.log(text);
     return slice.length;
   };
-  window.capturePicks = function () { console.table(picks); return picks; };
-  window.captureResend = function () { post(); return picks.length; };
+  W.capturePicks = function () { console.table(picks); return picks; };
+  W.captureResend = function () { post(); return picks.length; };
 
-  window.captureSummary = function () {
+  W.captureSummary = function () {
     const byChannel = {};
     log.forEach((m) => {
       const key = m.channel + " " + m.url.split("?")[0];
