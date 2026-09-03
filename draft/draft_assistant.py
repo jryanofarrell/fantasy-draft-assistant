@@ -371,6 +371,7 @@ def run_live(args):
     shown_for = None
     failures = 0
     silent_polls = 0
+    current_league = state0.get("league")
 
     # Absorb anything already drafted before drawing the opening board. On a
     # restart mid-draft the board would otherwise show drafted players as
@@ -431,6 +432,23 @@ def run_live(args):
                 time.sleep(args.interval)
                 continue
             failures = 0
+
+            # A feed that changes draft makes everything absorbed so far
+            # belong to the wrong board — a warning is not enough, since the
+            # numbers keep being drawn from the old one.
+            feed_league = state.get("league")
+            if feed_league and current_league and feed_league != current_league:
+                print(f"\n=== new draft ({feed_league}) — rebuilding the board "
+                      f"===\n", flush=True)
+                available = ranked_overall.copy()
+                my_roster = ranked_overall.iloc[0:0].copy()
+                previous, batch, shown_for = None, [], None
+                if hasattr(draft, "forget"):
+                    draft.forget()
+                # Leave the picks unread: the normal flow below absorbs them
+                # in the same pass, and consuming them here would mark them
+                # seen and leave nothing to draw.
+            current_league = feed_league or current_league
 
             # ESPN practice drafts never publish picks, and it is not
             # certain a real one publishes while running. But ESPN also
