@@ -178,6 +178,34 @@ def suggest_top(available: pd.DataFrame, my_roster: pd.DataFrame, k: int = 10,
     return pre.head(k)[["Player", "Position", POINTS_COL, "VOR", "MarginalGain",
                         "VONA", "Key"]].reset_index(drop=True)
 
+def resolve_typed(board: pd.DataFrame, text: str):
+    """Find who someone meant from whatever they typed.
+
+    Manual entry used to demand the exact "Name (POS)" the board prints,
+    which is a lot of keystrokes per pick with a clock running. This accepts
+    a bare surname, a partial name, or the full string, and only asks for
+    more when the text genuinely fits several players.
+
+    Returns (row, candidates). A row means one match; otherwise candidates
+    holds what it narrowed to.
+    """
+    typed = normalize_name(text)
+    if not typed:
+        return None, []
+
+    names = board["Player"].map(normalize_name)
+    for match in (names == typed,
+                  names.str.startswith(typed),
+                  names.str.contains(typed, regex=False)):
+        hits = board[match]
+        if len(hits) == 1:
+            return hits.iloc[0], []
+        if len(hits) > 1:
+            # Several plausible; prefer the best available among them.
+            return None, hits.nlargest(min(len(hits), 6), "VOR")
+    return None, []
+
+
 def find_in_board(board: pd.DataFrame, name: str, position: str):
     """Locate a drafted player on our board.
 
@@ -594,15 +622,18 @@ def main():
             if user_in == "":
                 user_in = default_choice
 
-            key = user_in.strip().lower()
-            mask = available["Key"] == key
-            if not mask.any():
-                print("Name not found. Use exact 'Name (POS)'.")
+            row, options = resolve_typed(available, user_in)
+            if row is None:
+                if len(options):
+                    print("  did you mean:")
+                    for _, o in options.iterrows():
+                        print(f"    {o['Player']} ({o['Position']})")
+                else:
+                    print("  no match — try more of the name")
                 continue
 
-            row = available.loc[mask].iloc[0]
             my_roster = pd.concat([my_roster, row.to_frame().T], ignore_index=True)
-            available = available.loc[~mask].reset_index(drop=True)
+            available = available[available["Key"] != row["Key"]].reset_index(drop=True)
 
             if HAVE_PT:
                 base_completer.words = remaining_display(available)
@@ -628,13 +659,18 @@ def main():
             else:
                 key = user_in.strip().lower()
 
-            mask = available["Key"] == key
-            if not mask.any():
-                print("Name not found. Try exact 'Name (POS)' or 'auto'.")
+            row, options = resolve_typed(available, key)
+            if row is None:
+                if len(options):
+                    print("  did you mean:")
+                    for _, o in options.iterrows():
+                        print(f"    {o['Player']} ({o['Position']})")
+                else:
+                    print("  no match — try more of the name, or 'auto'")
                 continue
 
-            row = available.loc[mask].iloc[0]
-            available = available.loc[~mask].reset_index(drop=True)
+            available = available[available["Key"] != row["Key"]].reset_index(drop=True)
+
             if HAVE_PT:
                 base_completer.words = remaining_display(available)
 
