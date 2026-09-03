@@ -300,15 +300,23 @@ def run_live(args):
     # Absorb anything already drafted before drawing the opening board. On a
     # restart mid-draft the board would otherwise show drafted players as
     # available, and your own roster as empty, until the next poll.
+    unmatched = []
     for entry in draft.new_picks(state0):
         was_mine = (entry.get("team_id") == my_team_id
                     if my_team_id is not None
                     else entry["overall"] in my_schedule)
-        available, my_roster, _ = apply_pick(available, my_roster, entry, was_mine)
+        available, my_roster, row = apply_pick(available, my_roster, entry,
+                                               was_mine)
+        if row is None and was_mine and entry["position"] not in {"K", "D/ST", "DEF"}:
+            unmatched.append(f"#{entry['overall']} {entry['player']}")
         previous = (f"#{entry['overall']} {entry['player']} "
                     f"[{entry['position']}]{'  <- YOU' if was_mine else ''}")
-    if len(my_roster):
+    if len(my_roster) or unmatched:
         print(f"  Resumed mid-draft: {len(my_roster)} of your picks already made")
+    if unmatched:
+        print(f"  !! {len(unmatched)} of your picks did not match the board "
+              f"({', '.join(unmatched)}) — suggestions will undercount your "
+              f"roster")
 
     # Show the opening board straight away. Without this, starting before the
     # draft leaves a blank screen until someone picks.
@@ -352,9 +360,20 @@ def run_live(args):
                         else entry["overall"] in my_schedule)
                 available, my_roster, row = apply_pick(
                     available, my_roster, entry, mine)
+                if row is not None:
+                    note = ""
+                elif entry["position"] in {"K", "D/ST", "DEF"}:
+                    note = "  (not projected — draft by feel)"
+                elif mine:
+                    # Dropping one of your own picks would undercount your
+                    # roster in every later suggestion, with nothing on screen
+                    # to say so.
+                    note = "  !! NOT MATCHED — your roster is missing him"
+                else:
+                    note = "  (not on board)"
                 batch.append(f"#{entry['overall']} {entry['player']} "
                              f"[{entry['position']}]"
-                             f"{'  <- YOU' if mine else ''}")
+                             f"{'  <- YOU' if mine else ''}{note}")
 
             if state["complete"]:
                 print("\ndraft complete")
@@ -597,20 +616,10 @@ def main():
             print(f"Team {team} drafted: {row['Player']} ({row['Position']})")
             pick += 1
 
-    # Final roster summary
     if len(my_roster):
-        starters_idx = best_starting_lineup_indices(my_roster)
-        starters = my_roster.loc[list(starters_idx)]
-        bench = my_roster.drop(index=list(starters_idx), errors="ignore")
-        print("\n=== Your Starters ===")
-        print(starters.sort_values(["Position", POINTS_COL], ascending=[True, False])
-                    [["Player", "Position", POINTS_COL, "VOR"]]
-                    .rename(columns={POINTS_COL: "AVG"}).to_string(index=False))
-        if not bench.empty:
-            print("\n--- Bench ---")
-            print(bench.sort_values(["VOR", POINTS_COL], ascending=[False, False])
-                      [["Player", "Position", POINTS_COL, "VOR"]]
-                      .rename(columns={POINTS_COL: "AVG"}).to_string(index=False))
+        print_final_roster(my_roster)
+    return 0
+
 
 if __name__ == "__main__":
     raise SystemExit(main() or 0)
