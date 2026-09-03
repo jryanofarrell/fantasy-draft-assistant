@@ -339,6 +339,7 @@ def run_live(args):
     batch: list[str] = []
     shown_for = None
     failures = 0
+    silent_polls = 0
     try:
         while True:
             try:
@@ -352,6 +353,23 @@ def run_live(args):
                 time.sleep(args.interval)
                 continue
             failures = 0
+
+            # ESPN practice drafts never publish picks, and it is not certain
+            # a real one publishes while it is running. Say so early rather
+            # than leaving a blank screen that looks like a hung poll.
+            if state.get("in_progress") and not draft._seen:
+                silent_polls += 1
+                if silent_polls == int(max(30 / args.interval, 3)):
+                    print("\n!! The draft is in progress but no picks are "
+                          "coming through.\n"
+                          "   ESPN does not publish practice drafts to its "
+                          "API at all; a real draft may\n"
+                          "   only publish once it completes. If picks are "
+                          "visible on screen but not here,\n"
+                          "   stop and run  ./run.py draft  instead and type "
+                          "them in — same board.\n", flush=True)
+            else:
+                silent_polls = 0
             fresh = draft.new_picks(state)
             batch = []
             for entry in fresh:
