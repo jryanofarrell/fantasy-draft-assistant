@@ -13,6 +13,8 @@ from __future__ import annotations
 
 import argparse
 import json
+import socket
+import sys
 from http.server import BaseHTTPRequestHandler, HTTPServer
 from pathlib import Path
 
@@ -20,6 +22,12 @@ from config import REPO_ROOT
 
 FEED = REPO_ROOT / "bridge" / "feed.json"
 DEFAULT_PORT = 8787
+
+
+class Server(HTTPServer):
+    # Without this a restart within the TIME_WAIT window is refused, which
+    # on a draft clock is exactly when you are restarting.
+    allow_reuse_address = True
 
 
 class Handler(BaseHTTPRequestHandler):
@@ -66,10 +74,24 @@ def main() -> int:
 
     FEED.parent.mkdir(parents=True, exist_ok=True)
     FEED.write_text(json.dumps({"picks": []}))
-    print(f"bridge listening on http://127.0.0.1:{args.port}  ->  {FEED}")
-    print("in another terminal:  ./run.py draft --provider local")
     try:
-        HTTPServer(("127.0.0.1", args.port), Handler).serve_forever()
+        server = Server(("127.0.0.1", args.port), Handler)
+    except OSError as exc:
+        if exc.errno != 48:
+            raise
+        print(f"error: port {args.port} is already in use — most likely a "
+              f"bridge you left running.\n"
+              f"  find it:  lsof -ti :{args.port}\n"
+              f"  stop it:  kill $(lsof -ti :{args.port})\n"
+              f"  or pick another port:  ./run.py bridge --port {args.port + 1}\n"
+              f"     (then edit BRIDGE in bridge/espn-capture.user.js to match)",
+              file=sys.stderr)
+        return 1
+
+    print(f"bridge listening on http://127.0.0.1:{args.port}  ->  {FEED}")
+    print("in another terminal:  ./run.py draft --live --provider local")
+    try:
+        server.serve_forever()
     except KeyboardInterrupt:
         print("\nstopped")
     return 0
