@@ -262,6 +262,29 @@ def window_for(my_next: int, schedule: list[int]) -> tuple[int, int]:
     return my_next, following
 
 
+def pick_number(raw: dict) -> int | None:
+    """Overall pick number, whichever provider a raw pick came from.
+
+    ESPN calls it overallPickNumber, Sleeper pick_no, and the browser bridge
+    overall. Reading only the first two made a bridged draft look permanently
+    stuck on pick one.
+    """
+    for key in ("overallPickNumber", "pick_no", "overall"):
+        value = raw.get(key)
+        if value:
+            return int(value)
+    return None
+
+
+def pick_team(raw: dict) -> int | None:
+    """Team id on a raw pick, across the same three providers."""
+    for key in ("teamId", "roster_id", "team_id"):
+        value = raw.get(key)
+        if value:
+            return int(value)
+    return None
+
+
 def apply_pick(available, my_roster, entry, mine: bool):
     """Remove a drafted player from the board, adding him to your roster.
 
@@ -305,15 +328,14 @@ def run_live(args):
             my_team_id = None
     state0 = draft.state()
     on_the_clock = {
-        p.get("overallPickNumber") or p.get("pick_no"):
-            state0["teams"].get(p.get("teamId") or p.get("roster_id"), "")
+        pick_number(p): state0["teams"].get(pick_team(p), "")
         for p in state0["picks"]
     }
     if my_team_id is not None:
         name = state0["teams"].get(my_team_id, f"team {my_team_id}")
         print(f"  You are: {name} (team {my_team_id})")
-        owned = [p.get("overallPickNumber") for p in state0["picks"]
-                 if p.get("teamId") == my_team_id]
+        owned = [pick_number(p) for p in state0["picks"]
+                 if pick_team(p) == my_team_id]
         owned = sorted(x for x in owned if x)
         if owned:
             if owned[:len(my_schedule)] != my_schedule[:len(owned)]:
@@ -331,10 +353,17 @@ def run_live(args):
     print(f"\nPolling every {args.interval}s. Draft in your provider as normal; "
           f"Ctrl-C to stop.\n")
 
+    previous = None
+    batch: list[str] = []
+    shown_for = None
+    failures = 0
+    silent_polls = 0
+
     # Absorb anything already drafted before drawing the opening board. On a
     # restart mid-draft the board would otherwise show drafted players as
     # available, and your own roster as empty, until the next poll.
     unmatched = []
+    absorbed = []
     for entry in draft.new_picks(state0):
         was_mine = (entry.get("team_id") == my_team_id
                     if my_team_id is not None
@@ -345,8 +374,15 @@ def run_live(args):
             unmatched.append(f"#{entry['overall']} {entry['player']}")
         previous = (f"#{entry['overall']} {entry['player']} "
                     f"[{entry['position']}]{'  <- YOU' if was_mine else ''}")
+        absorbed.append(previous)
+    if absorbed:
+        print(f"  Absorbed {len(absorbed)} picks already made:")
+        for line in absorbed[-12:]:
+            print(f"    {line}")
+        if len(absorbed) > 12:
+            print(f"    ... and {len(absorbed) - 12} earlier")
     if len(my_roster) or unmatched:
-        print(f"  Resumed mid-draft: {len(my_roster)} of your picks already made")
+        print(f"  {len(my_roster)} of them are yours")
     if unmatched:
         print(f"  !! {len(unmatched)} of your picks did not match the board "
               f"({', '.join(unmatched)}) — suggestions will undercount your "
@@ -358,9 +394,9 @@ def run_live(args):
     if opening_next is not None:
         following = next((p for p in my_schedule if p > opening_next), None)
         made_now = [p for p in state0["picks"]
-                    if p.get("playerId", -1) > 0 or p.get("pick_no")]
-        start = (max(p.get("overallPickNumber") or p.get("pick_no")
-                     for p in made_now) + 1) if made_now else 1
+                    if p.get("playerId", -1) > 0 or p.get("pick_no")
+                    or p.get("overall")]
+        start = (max(pick_number(p) for p in made_now) + 1) if made_now else 1
         print(f"Pick #{start} Round{(start - 1) // LEAGUE_SIZE + 1}"
               f"{' ' + on_the_clock.get(start, '') if on_the_clock.get(start) else ''}"
               f"{'  <<< YOU ARE ON THE CLOCK' if start == opening_next else ''}")
@@ -369,11 +405,6 @@ def run_live(args):
                    on_clock=(start == opening_next))
         shown_for = opening_next if start == opening_next else None
 
-    previous = None
-    batch: list[str] = []
-    shown_for = None
-    failures = 0
-    silent_polls = 0
     try:
         while True:
             try:
@@ -436,9 +467,8 @@ def run_live(args):
             # Raw provider picks use their own key names; only the normalised
             # dicts from new_picks() carry "overall".
             made = {
-                p.get("overallPickNumber") or p.get("pick_no")
-                for p in state["picks"]
-                if p.get("playerId", -1) > 0 or p.get("pick_no")
+                pick_number(p) for p in state["picks"]
+                if p.get("playerId", -1) > 0 or p.get("pick_no") or p.get("overall")
             }
             made.discard(None)
             next_overall = (max(made) + 1) if made else 1
