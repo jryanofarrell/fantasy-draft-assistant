@@ -39,6 +39,11 @@ DRAFTED_STARTERS = sum(ROSTER_SLOTS.values())
 # deep pool costs time without changing the board.
 CANDIDATE_POOL = 50
 
+# Seconds of an in-progress draft with no picks before saying something. ESPN
+# flags a draft in progress as soon as its room opens, so this has to outlast
+# the pre-draft countdown to avoid crying wolf.
+SILENT_WARN_AFTER = 120
+
 # ===== Replacement "ghost" lineup (baseline for marginal gain) =====
 def build_replacement_skeleton(rep_val: dict, pool_cols: list[str]) -> pd.DataFrame:
     rows = []
@@ -354,20 +359,22 @@ def run_live(args):
                 continue
             failures = 0
 
-            # ESPN practice drafts never publish picks, and it is not certain
-            # a real one publishes while it is running. Say so early rather
-            # than leaving a blank screen that looks like a hung poll.
+            # ESPN practice drafts never publish picks, and it is not
+            # certain a real one publishes while running. But ESPN also
+            # reports inProgress the moment the draft room opens, well before
+            # anyone picks, so this waits long enough not to fire during the
+            # countdown — and repeats, because a real stall stays a problem.
             if state.get("in_progress") and not draft._seen:
                 silent_polls += 1
-                if silent_polls == int(max(30 / args.interval, 3)):
-                    print("\n!! The draft is in progress but no picks are "
-                          "coming through.\n"
-                          "   ESPN does not publish practice drafts to its "
-                          "API at all; a real draft may\n"
-                          "   only publish once it completes. If picks are "
-                          "visible on screen but not here,\n"
-                          "   stop and run  ./run.py draft  instead and type "
-                          "them in — same board.\n", flush=True)
+                every = max(int(SILENT_WARN_AFTER / args.interval), 3)
+                if silent_polls % every == 0:
+                    waited = int(silent_polls * args.interval)
+                    print(f"\n   still no picks after {waited}s. Normal if the "
+                          f"draft hasn't started.\n"
+                          f"   If picks ARE on your screen, ESPN isn't "
+                          f"publishing them — stop and run\n"
+                          f"   ./run.py draft  to type them in; same board, "
+                          f"same numbers.\n", flush=True)
             else:
                 silent_polls = 0
             fresh = draft.new_picks(state)
