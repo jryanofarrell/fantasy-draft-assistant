@@ -199,12 +199,27 @@ class LocalDraft:
 
     def __init__(self, feed: str | None = None, season: int = SEASON):
         from config import REPO_ROOT
-        self.path = Path(feed) if feed else REPO_ROOT / "bridge" / "feed.json"
+        self.dir = REPO_ROOT / "bridge" / "feeds"
+        # An explicit argument may be a league id or a path; without one the
+        # most recently written draft is the one in progress.
+        self.explicit = None
+        if feed:
+            candidate = Path(feed)
+            self.explicit = candidate if candidate.exists() else \
+                self.dir / f"draft-{feed}.json"
         self.season = season
         self._seen: set[int] = set()
         self._players: dict[int, tuple[str, str]] = {}
         self._teams: dict[int, str] = {}
         self._league_id: str | None = None
+
+    @property
+    def path(self) -> Path | None:
+        if self.explicit:
+            return self.explicit
+        feeds = sorted(self.dir.glob("draft-*.json"),
+                       key=lambda p: p.stat().st_mtime, reverse=True)
+        return feeds[0] if feeds else None
 
     def _cookies(self) -> dict:
         auth = espn_api.read_auth()
@@ -246,11 +261,12 @@ class LocalDraft:
         return int(team_id) if team_id else None
 
     def state(self) -> dict:
-        if not self.path.exists():
+        path = self.path
+        if path is None or not path.exists():
             return {"in_progress": False, "complete": False, "picks": [],
                     "teams": {}, "teams_raw": []}
         try:
-            data = json.loads(self.path.read_text() or "{}")
+            data = json.loads(path.read_text() or "{}")
         except json.JSONDecodeError:
             data = {}
         league_id = data.get("leagueId")

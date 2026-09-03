@@ -20,7 +20,19 @@ from pathlib import Path
 
 from config import REPO_ROOT
 
-FEED = REPO_ROOT / "bridge" / "feed.json"
+FEED_DIR = REPO_ROOT / "bridge" / "feeds"
+
+
+def feed_for(league: str | None) -> Path:
+    """One file per draft.
+
+    Sharing a single file meant a new draft inherited the previous one's
+    picks — players marked drafted who were not, and real picks skipped
+    because their numbers were already spoken for. Keyed by league, that
+    cannot happen.
+    """
+    name = "".join(c for c in str(league or "unknown") if c.isalnum()) or "unknown"
+    return FEED_DIR / f"draft-{name}.json"
 DEFAULT_PORT = 8787
 
 
@@ -59,29 +71,14 @@ class Handler(BaseHTTPRequestHandler):
         picks = payload.get("picks", payload if isinstance(payload, list) else [])
         league = payload.get("leagueId")
 
-        # A different league means a different draft. Carrying the old one's
-        # picks over marks players as drafted who are not, and — worse — the
-        # assistant treats those pick numbers as already seen and skips the
-        # real picks that follow.
-        if FEED.exists():
-            try:
-                held = json.loads(FEED.read_text())
-            except json.JSONDecodeError:
-                held = {}
-            if held.get("picks") and held.get("leagueId") not in (None, league):
-                print(f"  bridge: new draft ({league}) — discarding "
-                      f"{len(held['picks'])} picks from {held.get('leagueId')}",
-                      flush=True)
-
-        FEED.parent.mkdir(parents=True, exist_ok=True)
-        # Keep the league id: without it the assistant cannot look up team
-        # names, and every pick shows as "Team 7".
-        FEED.write_text(json.dumps({
+        feed = feed_for(league)
+        feed.parent.mkdir(parents=True, exist_ok=True)
+        feed.write_text(json.dumps({
             "leagueId": league,
             "complete": payload.get("complete", False),
             "picks": picks,
         }, indent=1))
-        print(f"  bridge: {len(picks)} picks", flush=True)
+        print(f"  bridge: {len(picks)} picks -> {feed.name}", flush=True)
 
         self.send_response(200)
         self._cors()
@@ -100,20 +97,19 @@ def main() -> int:
                     help="discard previously captured picks and start clean")
     args = ap.parse_args()
 
-    FEED.parent.mkdir(parents=True, exist_ok=True)
-    if args.reset or not FEED.exists():
-        FEED.write_text(json.dumps({"picks": []}))
+    FEED_DIR.mkdir(parents=True, exist_ok=True)
+    if args.reset:
+        removed = 0
+        for path in FEED_DIR.glob("draft-*.json"):
+            path.unlink()
+            removed += 1
+        print(f"cleared {removed} stored draft(s)")
     else:
-        # Restarting mid-draft must not discard what has been captured. The
-        # browser re-sends its whole list on the next pick, but until then
-        # the board would show drafted players as still available.
-        try:
-            held = len(json.loads(FEED.read_text()).get("picks", []))
-            if held:
-                print(f"resuming with {held} picks already captured "
-                      f"(--reset to start clean)")
-        except json.JSONDecodeError:
-            FEED.write_text(json.dumps({"picks": []}))
+        existing = sorted(FEED_DIR.glob("draft-*.json"),
+                          key=lambda p: p.stat().st_mtime, reverse=True)
+        if existing:
+            print(f"{len(existing)} stored draft(s); newest is "
+                  f"{existing[0].name} (--reset to clear)")
 
     try:
         server = Server(("127.0.0.1", args.port), Handler)
@@ -129,7 +125,7 @@ def main() -> int:
               file=sys.stderr)
         return 1
 
-    print(f"bridge listening on http://127.0.0.1:{args.port}  ->  {FEED}")
+    print(f"bridge listening on http://127.0.0.1:{args.port}  ->  {FEED_DIR}/")
     print("in another terminal:  ./run.py draft --live --provider local")
     try:
         server.serve_forever()

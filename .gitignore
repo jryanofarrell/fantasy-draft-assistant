@@ -22,5 +22,5 @@ sim*.txt
 
 # Simulation preview output
 draft-preview.txt
-bridge/feed.json
+bridge/feeds/
 data/**/board-full.csv

@@ -341,7 +341,8 @@ browser. `bridge/espn-capture.user.js` reads them there and forwards them:
    **Developer mode** on at `chrome://extensions` or Tampermonkey injects
    nothing.
 2. `./run.py bridge` in one terminal.
-3. `./run.py draft --live --provider local` in another.
+3. `./run.py draft --live --provider local` in another. It reads the most
+   recently written draft; pass `--league-id <id>` to pin a specific one.
 4. Open the draft room. A badge top-right shows picks captured.
 
 The room speaks a small line protocol on its own socket:
@@ -355,6 +356,11 @@ CLOCK / AUTOSUGGEST / PING / PONG              not picks
 Only `SELECTED` matters. The userscript forwards ids and nothing else; names,
 positions and team names are resolved locally against ESPN's player index,
 so the browser side stays trivial and survives ESPN restyling their UI.
+
+Each draft gets its own file under `bridge/feeds/`, so starting a new one
+cannot inherit the previous draft's picks — which would otherwise mark
+players as drafted who were not, and skip the real picks whose numbers were
+already taken. `./run.py bridge --reset` clears them.
 
 If any of this fails on draft day, `./run.py draft` takes picks typed by
 hand and shows the identical board.
