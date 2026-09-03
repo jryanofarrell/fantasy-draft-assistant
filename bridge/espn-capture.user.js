@@ -29,9 +29,21 @@
   // Only SELECTED matters. Player and team names are resolved locally, where
   // the assistant already has ESPN's player index.
   const BRIDGE = "http://127.0.0.1:8787/";
-  const picks = [];
-  const seen = new Set();
   let leagueId = (location.search.match(/leagueId=(\d+)/) || [])[1] || null;
+
+  // Only frames seen since this page loaded are captured, so a refresh or a
+  // crash mid-draft would otherwise lose every pick so far. Keeping them in
+  // localStorage means a reload picks up where it left off.
+  const STORE = "draftCapture:" + (leagueId || "unknown");
+  let picks = [];
+  try {
+    const saved = JSON.parse(localStorage.getItem(STORE) || "[]");
+    if (Array.isArray(saved) && saved.length) {
+      picks = saved;
+      console.log(`[capture] restored ${picks.length} picks from a previous load`);
+    }
+  } catch (e) { /* corrupt store; start clean */ }
+  const seen = new Set(picks.map((p) => p.team_id + ":" + p.player_id));
 
   const post = () => {
     const body = JSON.stringify({ leagueId, picks });
@@ -67,6 +79,7 @@
         player_id: Number(m[2]),
         slot_id: Number(m[3]),
       });
+      try { localStorage.setItem(STORE, JSON.stringify(picks)); } catch (e) {}
       console.log(`[capture] pick ${picks.length}: team ${m[1]} -> player ${m[2]}`);
       post();
     });
@@ -166,6 +179,8 @@
     }, 1000);
   };
   banner();
+
+  if (picks.length) post();
 
   console.log("[capture] armed on", location.href,
               "— draft as normal, then run: captureSummary() / copyCapture()");
