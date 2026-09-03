@@ -96,7 +96,8 @@
     const el = document.createElement("div");
     el.id = "draft-capture-banner";
     el.textContent = "capture armed — 0 msgs";
-    el.style.cssText = "position:fixed;bottom:8px;left:8px;z-index:2147483647;" +
+    // Top-right: DevTools docks at the bottom, which hid this.
+    el.style.cssText = "position:fixed;top:8px;right:8px;z-index:2147483647;" +
       "background:#0a7;color:#fff;font:12px/1.4 monospace;padding:4px 8px;" +
       "border-radius:4px;opacity:.9;pointer-events:none";
     document.body.appendChild(el);
