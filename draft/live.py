@@ -255,7 +255,13 @@ class LocalDraft:
             data = {}
         league_id = data.get("leagueId")
         if league_id and league_id != self._league_id:
+            if self._league_id is not None:
+                # The feed now describes a different draft; anything already
+                # reported belongs to the old one.
+                print(f"  ! feed switched to league {league_id} — restart the "
+                      f"assistant to rebuild the board", flush=True)
             self._league_id = league_id
+            self._teams = {}
             self._load_teams(league_id)
         picks = data.get("picks", [])
         return {"in_progress": bool(picks), "complete": bool(data.get("complete")),

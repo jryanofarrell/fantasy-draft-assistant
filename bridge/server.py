@@ -57,11 +57,27 @@ class Handler(BaseHTTPRequestHandler):
             return
 
         picks = payload.get("picks", payload if isinstance(payload, list) else [])
+        league = payload.get("leagueId")
+
+        # A different league means a different draft. Carrying the old one's
+        # picks over marks players as drafted who are not, and — worse — the
+        # assistant treats those pick numbers as already seen and skips the
+        # real picks that follow.
+        if FEED.exists():
+            try:
+                held = json.loads(FEED.read_text())
+            except json.JSONDecodeError:
+                held = {}
+            if held.get("picks") and held.get("leagueId") not in (None, league):
+                print(f"  bridge: new draft ({league}) — discarding "
+                      f"{len(held['picks'])} picks from {held.get('leagueId')}",
+                      flush=True)
+
         FEED.parent.mkdir(parents=True, exist_ok=True)
         # Keep the league id: without it the assistant cannot look up team
         # names, and every pick shows as "Team 7".
         FEED.write_text(json.dumps({
-            "leagueId": payload.get("leagueId"),
+            "leagueId": league,
             "complete": payload.get("complete", False),
             "picks": picks,
         }, indent=1))
