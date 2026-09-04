@@ -73,7 +73,22 @@ def normalize_name(name: str | None) -> str:
     text = "".join(c for c in text if not unicodedata.combining(c))
     text = _PUNCT.sub(" ", text.lower())
     parts = [p for p in _SPACES.split(text) if p and p not in SUFFIXES]
-    cleaned = " ".join(parts)
+    # Punctuation stripping turns "D.J." into two tokens while ESPN writes
+    # "DJ" as one, so the two spellings of the same player never matched and
+    # he stayed on the board after being drafted. Rejoin runs of single
+    # letters: "d j moore" and "dj moore" both become "dj moore".
+    joined, run = [], []
+    for part in parts:
+        if len(part) == 1:
+            run.append(part)
+            continue
+        if run:
+            joined.append("".join(run))
+            run = []
+        joined.append(part)
+    if run:
+        joined.append("".join(run))
+    cleaned = " ".join(joined)
     return NAME_ALIASES.get(cleaned, cleaned)
 
 
