@@ -1,17 +1,18 @@
 
 import pandas as pd
 
+from config import SCORING, SEASON, position_file, scoring_dir
+
 position_numbers = {
     "QB": 12,
     "RB": 36,
     "WR": 36,
     "TE": 12
 }
-path = "./DraftSheets Fantasy Tool"
 all_frames = []
 
 for position, starter_count in position_numbers.items():
-    file_path = f"{path}/{position}-Table 1.csv"
+    file_path = position_file(position, SEASON)
     # Treat common empty tokens as NaN on read
     df = pd.read_csv(file_path, na_values=["NaN", "nan", "", " ", "Â", "Â "], keep_default_na=True)
 
@@ -30,4 +31,4 @@ result = pd.concat(all_frames, ignore_index=True)
 result_overall = result.sort_values("AVG Differential", ascending=False)
 print(result.head(10))
 
-result_overall.to_csv(f"{path}/FULL-Table 1.csv", index=False)
+result_overall.to_csv(scoring_dir(SCORING, SEASON) / "FULL-Table 1.csv", index=False)

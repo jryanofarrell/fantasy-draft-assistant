@@ -7,7 +7,20 @@ venv/
 # macOS
 .DS_Store
 
-# Data — not committed (see README for expected layout)
-DraftSheets Fantasy Tool/
-*.csv
-*.sqlite
+# Projection data and scrape caches — regenerate with download_projections.py
+data/
+league.espn.yaml
+
+# ESPN cookies — never commit
+auth
+
+# Cached from ESPN by ./run.py history
+league/draft_history.json
+
+# Simulation output
+sim*.txt
+
+# Simulation preview output
+draft-preview.txt
+bridge/feeds/
+data/**/board-full.csv
